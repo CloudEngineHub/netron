@@ -168,7 +168,9 @@ pytorch.Graph = class {
                 }
             }
             for (const node of graph.nodes()) {
-                if (node.kind() === 'prim::ListConstruct' && node.inputs().every((value) => typeof value.value === 'number' && typeof value.value === 'string' && typeof value.value === 'boolean')) {
+                if (node.kind() === 'prim::ListConstruct' &&
+                    node.inputs().every((value) => typeof value.value === 'number' && typeof value.value === 'string' && typeof value.value === 'boolean') &&
+                    node.outputs().every((value) => value.uses().every((use) => use.user.kind() !== 'prim::CallMethod'))) {
                     node.outputs()[0].value = node.inputs().map((value) => value.value);
                     node.destroy();
                 }
