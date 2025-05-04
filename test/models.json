@@ -8452,6 +8452,34 @@
     "error":    "Unsupported type 'weka.classifiers.trees.J48'."
   },
   {
+    "type":     "xgboost",
+    "target":   "xgb_classifier.json",
+    "source":   "https://github.com/user-attachments/files/20028544/xgb_classifier.zip[xgb_classifier.json]",
+    "error":    "File contains unsupported XGBoost JSON data.",
+    "link":     "https://github.com/lutzroeder/netron/issues/1452"
+  },
+  {
+    "type":     "xgboost",
+    "target":   "xgb_classifier.model",
+    "source":   "https://github.com/user-attachments/files/20028544/xgb_classifier.zip[xgb_classifier.model]",
+    "error":    "File contains unsupported XGBoost data.",
+    "link":     "https://github.com/lutzroeder/netron/issues/1452"
+  },
+  {
+    "type":     "xgboost",
+    "target":   "xgb_classifier.pkl",
+    "source":   "https://github.com/user-attachments/files/20028544/xgb_classifier.zip[xgb_classifier.pkl]",
+    "format":   "scikit-learn",
+    "link":     "https://github.com/lutzroeder/netron/issues/1452"
+  },
+  {
+    "type":     "xgboost",
+    "target":   "xgb_classifier.txt",
+    "source":   "https://github.com/user-attachments/files/20028544/xgb_classifier.zip[xgb_classifier.txt]",
+    "error":    "File contains unsupported XGBoost text data.",
+    "link":     "https://github.com/lutzroeder/netron/issues/1452"
+  },
+  {
     "type":     "xmodel",
     "target":   "face-quality_pt.xmodel",
     "source":   "https://github.com/lutzroeder/netron/files/7083632/face-quality_pt-vck190-r1.4.0.tar.gz[face-quality_pt/face-quality_pt.xmodel]",
