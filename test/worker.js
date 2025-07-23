@@ -71,6 +71,10 @@ host.TestHost = class {
         return this._errors;
     }
 
+    get type() {
+        return 'Test';
+    }
+
     environment(name) {
         return this._environment[name];
     }
@@ -598,7 +602,7 @@ export class Target {
         if (this.runtime && model.runtime !== this.runtime) {
             throw new Error(`Invalid runtime '${model.runtime}'.`);
         }
-        if (model.metadata && (!Array.isArray(model.metadata) || !model.metadata.every((argument) => argument.name && argument.value))) {
+        if (model.metadata && (!Array.isArray(model.metadata) || !model.metadata.every((argument) => argument.name && (argument.value || argument.value === null || argument.value === '' || argument.value === false || argument.value === 0)))) {
             throw new Error("Invalid model metadata.'");
         }
         if (this.assert) {
@@ -632,8 +636,8 @@ export class Target {
         if (model.version || model.description || model.author || model.license) {
             // continue
         }
-        /* eslint-disable no-unused-expressions */
-        const validateTarget = async (graph) => {
+        const validateGraph = async (graph) => {
+            /* eslint-disable no-unused-expressions */
             const values = new Map();
             const validateValue = async (value) => {
                 if (value === null) {
@@ -741,7 +745,7 @@ export class Target {
                 }
                 if (Array.isArray(type.nodes)) {
                     /* eslint-disable no-await-in-loop */
-                    await validateTarget(type);
+                    await validateGraph(type);
                     /* eslint-enable no-await-in-loop */
                 }
                 view.Documentation.open(type);
@@ -759,7 +763,7 @@ export class Target {
                         const value = attribute.value;
                         if ((type === 'graph' || type === 'function') && value && Array.isArray(value.nodes)) {
                             /* eslint-disable no-await-in-loop */
-                            await validateTarget(value);
+                            await validateGraph(value);
                             /* eslint-enable no-await-in-loop */
                         } else {
                             let text = new view.Formatter(attribute.value, attribute.type).toString();
@@ -813,12 +817,24 @@ export class Target {
                 const sidebar = new view.NodeSidebar(this.view, node);
                 sidebar.render();
             }
-            const sidebar = new view.ModelSidebar(this.view, model, graph);
+            const sidebar = new view.ModelSidebar(this.view, this.model, graph);
             sidebar.render();
+            /* eslint-enable no-unused-expressions */
         };
-        for (const graph of model.graphs) {
+        const validateTarget = async (target) => {
+            switch (target.type) {
+                case 'tokenizer':
+                case 'vocabulary': {
+                    break;
+                }
+                default: {
+                    await validateGraph(target);
+                }
+            }
+        };
+        for (const module of model.modules) {
             /* eslint-disable no-await-in-loop */
-            await validateTarget(graph);
+            await validateTarget(module);
             /* eslint-enable no-await-in-loop */
         }
         const functions = model.functions || [];
@@ -830,7 +846,7 @@ export class Target {
     }
 
     async render() {
-        for (const graph of this.model.graphs) {
+        for (const graph of this.model.modules) {
             const signatures = Array.isArray(graph.signatures) && graph.signatures.length > 0 ? graph.signatures : [graph];
             for (const signature of signatures) {
                 /* eslint-disable no-await-in-loop */
