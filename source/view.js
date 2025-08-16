@@ -242,7 +242,7 @@ view.View = class {
         }
         this._host.document.body.classList.remove(...Array.from(this._host.document.body.classList).filter((_) => _ !== 'active'));
         this._host.document.body.classList.add(...page.split(' '));
-        if (page === 'default') {
+        if (this._target && page === 'default') {
             this._target.register();
         } else if (this._target) {
             this._target.unregister();
@@ -477,14 +477,14 @@ view.View = class {
     }
 
     get activeTarget() {
-        if (Array.isArray(this._path) && this._path.length > 0) {
+        if (this._path.length > 0) {
             return this._path[0].target;
         }
         return null;
     }
 
     get activeSignature() {
-        if (Array.isArray(this._path) && this._path.length > 0) {
+        if (this._path.length > 0) {
             return this._path[0].signature;
         }
         return null;
@@ -1489,9 +1489,6 @@ view.Graph = class extends grapher.Graph {
     constructor(view, compound) {
         super(compound);
         this.view = view;
-        this.host = view.host;
-        this.model = view.model;
-        this.options = view.options;
         this.counter = 0;
         this._nodeKey = 0;
         this._values = new Map();
@@ -1499,6 +1496,18 @@ view.Graph = class extends grapher.Graph {
         this._table = new Map();
         this._selection = new Set();
         this._zoom = 1;
+    }
+
+    get model() {
+        return this.view.model;
+    }
+
+    get host() {
+        return this.view.host;
+    }
+
+    get options() {
+        return this.view.options;
     }
 
     createNode(node) {
@@ -1827,17 +1836,17 @@ view.Graph = class extends grapher.Graph {
             this._events.gesturestart = (e) => this._gestureStartHandler(e);
             this._events.pointerdown = (e) => this._pointerDownHandler(e);
             this._events.touchstart = (e) => this._touchStartHandler(e);
-        }
-        const document = this.host.document;
-        const element = document.getElementById('target');
-        element.focus();
-        element.addEventListener('scroll', this._events.scroll);
-        element.addEventListener('wheel', this._events.wheel, { passive: false });
-        element.addEventListener('pointerdown', this._events.pointerdown);
-        if (this.host.environment('agent') === 'safari') {
-            element.addEventListener('gesturestart', this._events.gesturestart, false);
-        } else {
-            element.addEventListener('touchstart', this._events.touchstart, { passive: true });
+            const document = this.host.document;
+            const element = document.getElementById('target');
+            element.focus();
+            element.addEventListener('scroll', this._events.scroll);
+            element.addEventListener('wheel', this._events.wheel, { passive: false });
+            element.addEventListener('pointerdown', this._events.pointerdown);
+            if (this.host.environment('agent') === 'safari') {
+                element.addEventListener('gesturestart', this._events.gesturestart, false);
+            } else {
+                element.addEventListener('touchstart', this._events.touchstart, { passive: true });
+            }
         }
     }
 
@@ -1850,6 +1859,7 @@ view.Graph = class extends grapher.Graph {
             element.removeEventListener('pointerdown', this._events.pointerdown);
             element.removeEventListener('gesturestart', this._events.gesturestart);
             element.removeEventListener('touchstart', this._events.touchstart);
+            delete this._events;
         }
     }
 
@@ -6225,6 +6235,7 @@ view.ModelFactoryService = class {
         this.register('./tf', ['.pb', '.meta', '.pbtxt', '.prototxt', '.txt', '.pt', '.json', '.index', '.ckpt', '.graphdef', '.pbmm', /.data-[0-9][0-9][0-9][0-9][0-9]-of-[0-9][0-9][0-9][0-9][0-9]$/, /^events.out.tfevents./, /^.*group\d+-shard\d+of\d+(\.bin)?$/], ['.zip']);
         this.register('./tensorrt', ['.trt', '.trtmodel', '.engine', '.model', '.txt', '.uff', '.pb', '.tmfile', '.onnx', '.pth', '.dnn', '.plan', '.pt', '.dat', '.bin'], [], [/^ptrt/, /^ftrt/]);
         this.register('./keras', ['.h5', '.hd5', '.hdf5', '.keras', '.json', '.cfg', '.model', '.pb', '.pth', '.weights', '.pkl', '.lite', '.tflite', '.ckpt', '.pb', 'model.weights.npz', /^.*group\d+-shard\d+of\d+(\.bin)?$/], ['.zip'], [/^\x89HDF\r\n\x1A\n/]);
+        this.register('./safetensors', ['.safetensors', '.safetensors.index.json']);
         this.register('./numpy', ['.npz', '.npy', '.pkl', '.pickle', '.model', '.model2', '.mge', '.joblib', '']);
         this.register('./lasagne', ['.pkl', '.pickle', '.joblib', '.model', '.pkl.z', '.joblib.z']);
         this.register('./lightgbm', ['.txt', '.pkl', '.model']);
@@ -6268,7 +6279,6 @@ view.ModelFactoryService = class {
         this.register('./mlir', ['.mlir', '.mlir.txt', '.mlirbc']);
         this.register('./sentencepiece', ['.model']);
         this.register('./hailo', ['.hn', '.har', '.metadata.json']);
-        this.register('./safetensors', ['.safetensors', '.safetensors.index.json']);
         this.register('./tvm', ['.json', '.params']);
         this.register('./dot', ['.dot'], [], [/^\s*(\/\*[\s\S]*?\*\/|\/\/.*|#.*)?\s*digraph\s*([A-Za-z][A-Za-z0-9-_]*|".*?")?\s*{/m]);
         this.register('./catboost', ['.cbm']);
@@ -6711,8 +6721,8 @@ view.ModelFactoryService = class {
                         }
                         delete context.value;
                         if (type) {
-                            matches = matches.filter((match) => !factory.filter || factory.filter(context, match.type));
-                            if (matches.every((match) => !match.factory.filter || match.factory.filter(match, context.type))) {
+                            matches = matches.filter((match) => !factory.filter || factory.filter(context, match));
+                            if (matches.every((match) => !match.factory.filter || match.factory.filter(match, context))) {
                                 context.factory = factory;
                                 matches.push(context);
                             }

@@ -66,8 +66,24 @@ transformers.ModelFactory = class {
         return new transformers.Model(config, tokenizer, tokenizer_config, vocab, generation_config, preprocessor_config);
     }
 
-    filter(context, type) {
-        return context.type !== 'transformers.config' || (type !== 'transformers.tokenizer' && type !== 'transformers.tokenizer.config' && type !== 'transformers.vocab' && type !== 'transformers.generation_config' && type !== 'safetensors.preprocessor_config' && type !== 'safetensors.json');
+    filter(context, match) {
+        const priority = new Map([
+            ['transformers.config', 7],
+            ['transformers.tokenizer', 6],
+            ['transformers.tokenizer.config', 5],
+            ['transformers.vocab', 4],
+            ['transformers.generation_config', 3],
+            ['transformers.preprocessor_config.json', 2],
+            ['transformers.dtypes', 1],
+            ['safetensors.json', 0],
+            ['safetensors', 0]
+        ]);
+        const a = priority.has(context.type) ? priority.get(context.type) : -1; // current
+        const b = priority.has(match.type) ? priority.get(match.type) : -1;
+        if (a !== -1 && b !== -1) {
+            return a < b;
+        }
+        return true;
     }
 };
 
