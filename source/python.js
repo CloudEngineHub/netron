@@ -7296,6 +7296,166 @@ python.Execution = class {
                 const tx_validation_en = this.shape_env && this.shape_env._translation_validation_enabled ? true : false;
                 this.fx_node = tx_validation_en && fx_node ? fx_node : null;
             }
+            __str__() {
+                return this._expr.__str__();
+            }
+        });
+        this.registerType('torch.fx.experimental.symbolic_shapes.ShapeEnv', class {
+            constructor() {
+                this.var_to_val = new Map();
+                this.var_to_stack = new Map();
+            }
+            add_var_to_val(expr, val) {
+                this.var_to_val.set(expr, new sympy.core.numbers.Integer(val));
+            }
+            constrain_symbol_range(/* s, compiler_min, compiler_max */) {
+            }
+            create_symintnode(sym, hint, source) {
+                let out = null;
+                let fx_node = null;
+                if (this._translation_validation_enabled && source !== null) {
+                    throw new python.Error('Not implemented.');
+                } else {
+                    fx_node = null;
+                }
+                if (builtins.isinstance(sym, sympy.core.numbers.Integer)) {
+                    out = builtins.int(sym);
+                    if (hint !== null && out !== hint) {
+                        throw new python.Error(`Symbolic integer has value '${out}' but expected '${hint}'.`);
+                    }
+                } else {
+                    // if free_unbacked_symbols(sym):
+                    //     hint = None
+                    out = new torch.SymInt(new torch.fx.experimental.sym_node.SymNode(sym, self, builtins.int, hint, null, fx_node));
+                }
+                return out;
+            }
+        });
+        this.registerFunction('torch.fx.experimental.symbolic_shapes.symbol_is_type', (/* sym, prefix */) => {
+            /*
+            assert isinstance(sym, sympy.Symbol)
+            const name_str = sym.name.toLowerCase();
+            if (builtins.isinstance(prefix, torch.utils._sympy.symbol.SymT)) {
+                return name_str.startsWith(prefix_str[prefix])
+            }
+            return name_str.startswith(tuple(prefix_str[p] for p in prefix));
+            */
+            return false;
+        });
+        this.registerType('sympy.printing.defaults.Printable', class {});
+        this.registerType('sympy.core.basic.Basic', class extends sympy.printing.defaults.Printable {
+            constructor() {
+                super();
+                this._args = [];
+            }
+            get args() {
+                return this._args;
+            }
+            get is_Integer() {
+                return false;
+            }
+            get is_Float() {
+                return false;
+            }
+            get is_Boolean() {
+                return false;
+            }
+        });
+        this.registerType('sympy.core.expr.Expr', class extends sympy.core.basic.Basic {});
+        this.registerType('sympy.core.operations.AssocOp', class extends sympy.core.basic.Basic {});
+        this.registerType('sympy.core.power.Pow', class extends sympy.core.expr.Expr {
+            constructor(...args) {
+                super();
+                this._args = args;
+            }
+            __str__() {
+                return this._args.map((a) => a.__str__()).join('*');
+            }
+        });
+        this.registerType('sympy.core.mul.Mul', class extends sympy.core.operations.AssocOp {
+            constructor(...args) {
+                super();
+                this._args = args;
+            }
+            __str__() {
+                return this._args.map((a) => a.__str__()).join('*');
+            }
+        });
+        this.registerType('sympy.core.numbers.Number', class extends sympy.core.expr.Expr {});
+        this.registerType('sympy.core.numbers.Rational', class extends sympy.core.numbers.Number {});
+        this.registerType('sympy.core.numbers.Integer', class extends sympy.core.numbers.Rational {
+            constructor(value) {
+                super();
+                this.value = value;
+            }
+            get is_Integer() {
+                return true;
+            }
+            __int__() {
+                return this.value;
+            }
+            __str__() {
+                return this.value.toString();
+            }
+        });
+        this.registerType('sympy.core.symbol.Symbol', class extends sympy.core.expr.Expr {
+            constructor(name) {
+                super();
+                this.name = name;
+            }
+            __int__() {
+                throw new python.Error('Cannot convert symbols to int.');
+            }
+            __str__() {
+                return this.name;
+            }
+        });
+        this.registerFunction('sympy.core.sympify.sympify', (a /*, locals */) => {
+            if (a instanceof sympy.core.expr.Expr) {
+                return a;
+            }
+            const p = ast.parse(a);
+            const sympify = (node) => {
+                if (node instanceof ast.Call) {
+                    switch (node.func.id) {
+                        case 'Symbol': {
+                            const name = node.args[0].value;
+                            return new sympy.core.symbol.Symbol(name);
+                        }
+                        case 'Mul': {
+                            return new sympy.core.mul.Mul(...node.args.map((arg) => sympify(arg)));
+                        }
+                        case 'Pow': {
+                            return new sympy.core.power.Pow(...node.args.map((arg) => sympify(arg)));
+                        }
+                        case 'Integer': {
+                            const value = node.args[0].value;
+                            return new sympy.core.numbers.Integer(value);
+                        }
+                        default: {
+                            throw new python.Error(`Unsupported SymPy function '${node.func.id}'.`);
+                        }
+                    }
+                }
+                if (node instanceof ast.Name) {
+                    return new sympy.core.symbol.Symbol(node.id);
+                }
+                if (node instanceof ast.Constant) {
+                    if (node.type === 'int') {
+                        return new sympy.core.numbers.Integer(node.value);
+                    }
+                }
+                if (node instanceof ast.BinOp) {
+                    if (node.op instanceof ast.Mult) {
+                        return new sympy.core.mul.Mul(sympify(node.left), sympify(node.right));
+                    }
+                    if (node.op instanceof ast.Pow) {
+                        return new sympy.core.power.Pow(sympify(node.left), sympify(node.right));
+                    }
+                }
+                throw new python.Error(`Unsupported SymPy expression '${node.__class__.__name__}'.`);
+            };
+            return sympify(p.body[0].value);
         });
         this.registerType('torch.fx.experimental.symbolic_shapes.ShapeEnv', class {
             constructor() {
@@ -19593,6 +19753,9 @@ python.Execution = class {
         this.registerType('torch.SymInt', class {
             constructor(node) {
                 this.node = node;
+            }
+            toString() {
+                return this.node.__str__();
             }
         });
         this.register('torch.nn').Module = this.register('torch.nn.modules.module').Module;
