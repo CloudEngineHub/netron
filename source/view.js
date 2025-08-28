@@ -3109,7 +3109,11 @@ view.ArgumentView = class extends view.Control {
             });
         }
         this._source = typeof type === 'string' && !type.endsWith('*') ? 'attribute' : this._source;
-        if (this._source === 'attribute' && type !== 'tensor' && type !== 'tensor?' && type !== 'tensor[]' && type !== 'tensor?[]') {
+        const primitive = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint';
+        if (primitive) {
+            const item = new view.PrimitiveView(context, argument);
+            this._items.push(item);
+        } else if (this._source === 'attribute' && type !== 'tensor' && type !== 'tensor?' && type !== 'tensor[]' && type !== 'tensor?[]') {
             this._source = 'attribute';
             const item = new view.PrimitiveView(context, argument);
             this._items.push(item);
@@ -4591,7 +4595,7 @@ view.Formatter = class {
         if (typeof value === 'function') {
             return value();
         }
-        if (value && typeof value === 'bigint') {
+        if (value !== null && value !== undefined && (typeof value === 'bigint' || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
             return value.toString();
         }
         if (Number.isNaN(value)) {
@@ -6383,6 +6387,18 @@ view.ModelFactoryService = class {
                 throw new view.Error("Archive contains no model files.");
             }
         }
+        const regex = async() => {
+            const entries = [
+                { name: 'Unity metadata', value: /fileFormatVersion:/ },
+            ];
+            const buffer = stream.peek(Math.min(4096, stream.length));
+            const content = String.fromCharCode.apply(null, buffer);
+            for (const entry of entries) {
+                if (content.match(entry.value) && (!entry.identifier || context.identifier.match(entry.identifier))) {
+                    throw new view.Error(`Invalid file content. File contains ${entry.name}.`);
+                }
+            }
+        };
         const json = async () => {
             const obj = await context.peek('json');
             if (obj) {
@@ -6628,6 +6644,7 @@ view.ModelFactoryService = class {
             }
             throw new view.Error("Unsupported file directory.");
         };
+        await regex();
         await json();
         await pbtxt();
         await pb();
