@@ -184,7 +184,7 @@ const main = async () => {
         'mlir/Dialect/WasmSSA/IR/WasmSSAOps.td',
         'mlir/Dialect/IRDL/IR/IRDLOps.td',
         'mlir/Dialect/LLVMIR/LLVMOps.td',
-        // 'mlir/Dialect/OpenMP/OpenMPOps.td', // Requires llvm/include/llvm/Frontend/OpenMP/OMP.td for OmpCommon.td generation
+        // 'mlir/Dialect/OpenMP/OpenMPOps.td', // Requires template argument evaluation support
         'mlir/Dialect/ArmSME/IR/ArmSMEOps.td',
         'mlir/Dialect/ArmNeon/ArmNeon.td',
         'mlir/Dialect/ArmSVE/IR/ArmSVE.td',
@@ -285,6 +285,14 @@ const main = async () => {
             name: operationName
         };
         let args = def.resolveField('arguments');
+        // If the field value needs evaluation (e.g., it's a computed field), evaluate it
+        if (args && args.value && (args.value.type === 'id' || args.value.type === 'bang')) {
+            const evaluated = def.evaluateValue(args.value);
+            if (evaluated && typeof evaluated === 'object' && evaluated.operator) {
+                // The evaluation returned a DAG directly
+                args = { value: new tablegen.Value('dag', evaluated) };
+            }
+        }
         if (!args || !args.value || args.value.type !== 'dag' || (args.value.value && args.value.value.operands && args.value.value.operands.length === 0)) {
             for (const parent of def.parents) {
                 if (parent.name === 'Arguments' && parent.args && parent.args.length > 0) {
