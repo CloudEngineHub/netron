@@ -162,7 +162,7 @@ mlir.Graph = class {
                         results: [],
                         delete: false,
                     };
-                    const opMetadata = metadata.type(op.name);
+                    const opMetadata = op.metadata;
                     const operands = op.operands || [];
                     for (let i = 0; i < operands.length; i++) {
                         const input = op.operands[i];
@@ -1358,6 +1358,7 @@ mlir.Parser = class {
         if (!opInfo) {
             throw new mlir.Error(`Unsupported operation '${op.name}'.`);
         }
+        op.metadata = opInfo.metadata;
         const defaultDialect = (opInfo && opInfo.metadata && opInfo.metadata.defaultDialect) || '';
         this._state.defaultDialectStack.push(defaultDialect);
         if (dialect.parseOperation(this, opName, op)) {
@@ -2113,6 +2114,48 @@ mlir.Parser = class {
         return this.parseNonFunctionType();
     }
 
+    parseOptionalType() {
+        if (this.match('(') || this.match('!')) {
+            return this.parseType();
+        } else if (this.match('id')) {
+            switch (this._token.value) {
+                case 'memref':
+                case 'tensor':
+                case 'complex':
+                case 'tuple':
+                case 'vector':
+                case 'f4E2M1FN':
+                case 'f6E2M3FN':
+                case 'f6E3M2FN':
+                case 'f8E5M2':
+                case 'f8E4M3':
+                case 'f8E4M3FN':
+                case 'f8E5M2FNUZ':
+                case 'f8E4M3FNUZ':
+                case 'f8E4M3B11FNUZ':
+                case 'f8E3M4':
+                case 'f8E8M0FNU':
+                case 'bf16':
+                case 'f16':
+                case 'tf32':
+                case 'f32':
+                case 'f64':
+                case 'f80':
+                case 'f128':
+                case 'index':
+                case 'none':
+                    return this.parseType();
+                default:
+                    // Check for integer types (inttype in reference)
+                    if (/^[su]?i[0-9]+$/.test(this._token.value)) {
+                        return this.parseType();
+                    }
+                    break;
+            }
+        }
+        return null;
+    }
+
     parseNonFunctionType() {
         if (this.match('id')) {
             const value = this.expect('id');
@@ -2436,7 +2479,7 @@ mlir.Parser = class {
         throw new mlir.Error(`Unexpected value '${this._token.value}' ${this.location()}`);
     }
 
-    parseAttribute() {
+    parseAttribute(/* type */) {
         if (this.match('keyword', 'loc')) {
             return this.parseLocation();
         }
@@ -2562,47 +2605,35 @@ mlir.Parser = class {
         return this.parseValue();
     }
 
-    parseOptionalAttribute() {
+    parseOptionalAttribute(type) {
         switch (this._token.kind) {
-            case '@':
+            case '@': // do not remove
             case 'int':
             case 'float':
             case '#':
             case '[':
             case 'string':
             case 'boolean':
-                return this.parseAttribute();
+                return this.parseAttribute(type);
             case 'keyword':
-                // Handle minus for negative numbers and 'loc' keyword
                 if (this._token.value === '-' || this._token.value === 'loc') {
-                    return this.parseAttribute();
+                    return this.parseAttribute(type);
                 }
                 return null;
             case 'id':
-                // Check for attribute keywords
                 if (this._token.value === 'affine_map' || this._token.value === 'affine_set' ||
                     this._token.value === 'dense' || this._token.value === 'dense_resource' ||
                     this._token.value === 'sparse' || this._token.value === 'unit') {
-                    return this.parseAttribute();
+                    return this.parseAttribute(type);
+                }
+                // Fall through to default for type attributes
+            default: {
+                const value = this.parseOptionalType(type);
+                if (value) {
+                    return { value, type: 'type' };
                 }
                 return null;
-            case '!':
-                // Type attributes - try to parse type and wrap as TypeAttr
-                try {
-                    const type = this.parseType();
-                    return { value: type, type: 'type' };
-                } catch {
-                    return null;
-                }
-            default:
-                // Default case: try to parse as type attribute
-                // This matches reference implementation's parseOptionalType fallback
-                try {
-                    const type = this.parseType();
-                    return { value: type, type: 'type' };
-                } catch {
-                    return null;
-                }
+            }
         }
     }
 
@@ -3952,7 +3983,7 @@ mlir.Dialect = class {
             case 'custom': {
                 const fn = this._customDirectives.get(directive.parser);
                 if (!fn) {
-                    throw new mlir.Error(`Custom parser '${directive.parser}' not implemented.`);
+                    throw new mlir.Error(`Custom directive parser '${directive.parser}' not implemented.`);
                 }
                 fn(parser, op, directive.args);
                 break;
@@ -4173,7 +4204,7 @@ mlir.Dialect = class {
             return false;
         }
         if ((this.hasParser(opName) || this.hasCustomAssemblyFormat(opName)) && !this.hasAssemblyFormat(opName)) {
-            throw new mlir.Error(`Operation '${opName}' parser is not implemented.`);
+            throw new mlir.Error(`Operation parser '${opName}' not implemented.`);
         }
         const directives = opInfo.directives || [];
         for (let i = 0; i < directives.length; i++) {
@@ -7961,7 +7992,7 @@ mlir.TosaDialect = class extends mlir.Dialect {
         super('tosa', operations);
         this._binaryOps = new Set(['tosa.maximum', 'tosa.minimum']);
         this._unaryOps = new Set(['tosa.clamp']);
-        this._reduceOps = new Set(['tosa.reduce_min', 'tosa.reduce_max', 'tosa.reduce_sum', 'tosa.reduce_prod', 'tosa.reduce_any']);
+        this._reduceOps = new Set(['tosa.reduce_min', 'tosa.reduce_max', 'tosa.reduce_prod', 'tosa.reduce_any']);
         this._poolOps = new Set(['tosa.max_pool2d']);
     }
 
