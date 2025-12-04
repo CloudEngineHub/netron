@@ -3127,6 +3127,33 @@ mlir.FunctionType = class extends mlir.Type {
     }
 };
 
+mlir.LLVMFunctionType = class extends mlir.Type {
+
+    constructor(returnType, params, varArg = false) {
+        super(null);
+        this.returnType = returnType;
+        this.params = params || [];
+        this.varArg = varArg;
+    }
+
+    get inputs() {
+        return this.params;
+    }
+
+    get results() {
+        return this.returnType ? [this.returnType] : [];
+    }
+
+    toString() {
+        const params = this.params.map((t) => t.toString());
+        if (this.varArg) {
+            params.push('...');
+        }
+        const returnType = this.returnType ? this.returnType.toString() : 'void';
+        return `!llvm.func<${returnType} (${params.join(', ')})>`;
+    }
+};
+
 mlir.Utility = class {
 
     static dataType(value) {
@@ -11794,17 +11821,15 @@ mlir.LLVMDialect = class extends mlir.Dialect {
             op.attributes.push({ name: 'CConv', value: parser.expect('id') });
         }
         parser.parseSymbolName('sym_name', op.attributes);
-        const type = {};
         const argResult = parser.parseFunctionArgumentList(true);
-        type.inputs = argResult.arguments.map((a) => a.type);
-        if (argResult.isVariadic) {
-            op.attributes.push({ name: 'var_arg_', value: true });
-        }
-        type.results = [];
+        const params = argResult.arguments.map((a) => a.type);
+        const results = [];
         const resultAttrs = [];
         if (parser.accept('->')) {
-            parser.parseFunctionResultList(type.results, resultAttrs);
+            parser.parseFunctionResultList(results, resultAttrs);
         }
+        const returnType = results.length > 0 ? results[0] : null;
+        const type = new mlir.LLVMFunctionType(returnType, params, argResult.isVariadic);
         op.attributes.push({ name: 'function_type', value: type });
         if (parser.accept('id', 'vscale_range')) {
             parser.expect('(');
