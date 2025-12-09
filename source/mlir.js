@@ -856,7 +856,7 @@ mlir.Parser = class {
         this._dialects.set('ptr', new mlir.Dialect('ptr', operations));
         this._dialects.set('ub', new mlir.Dialect('ub', operations));
         this._dialects.set('amdgpu', new mlir.AMDGPUDialect(operations));
-        this._dialects.set('nvgpu', new mlir.Dialect('nvgpu', operations));
+        this._dialects.set('nvgpu', new mlir.NVGPUDialect(operations));
         this._dialects.set('nvvm', new mlir.NVVMDialect(operations));
         this._dialects.set('rocdl', new mlir.ROCDLDialect(operations));
         this._dialects.set('nvws', new mlir.Dialect('nvws', operations));
@@ -869,7 +869,7 @@ mlir.Parser = class {
         this._dialects.set('arm_sve', new mlir.ArmSVEDialect(operations));
         this._dialects.set('shard', new mlir.ShardDialect(operations));
         this._dialects.set('amx', new mlir.Dialect('amx', operations));
-        this._dialects.set('smt', new mlir.Dialect('smt', operations));
+        this._dialects.set('smt', new mlir.SMTDialect(operations));
         this._dialects.set('lagrad', new mlir.Dialect('lagrad', operations));
         this._dialects.set('iree_codegen', new mlir.Dialect('iree_codegen', operations));
         this._dialects.set('iree_encoding', new mlir.Dialect('iree_encoding', operations));
@@ -2545,16 +2545,7 @@ mlir.Parser = class {
         }
         // Parse an extended attribute, i.e. alias or dialect attribute.
         if (this.match('#')) {
-            const name = this.expect('#');
-            if (this.match('<')) {
-                const body = this.skip('<', '>');
-                return { value: name + body };
-            }
-            if (this.match('(')) {
-                const body = this.skip('(', ')');
-                return { value: name + body };
-            }
-            return { value: name };
+            return this.parseExtendedAttr();
         }
         // Parse floating point attribute.
         if (this.match('float')) {
@@ -2673,6 +2664,25 @@ mlir.Parser = class {
             return { value: type, type: 'type' };
         }
         throw new mlir.Error(`Unexpected attribute token '${this._token.value}' ${this.location()}`);
+    }
+
+    parseExtendedAttr() {
+        const name = this.expect('#');
+        let value = name;
+        if (this.match('<')) {
+            const body = this.skip('<', '>');
+            value = name + body;
+        } else if (this.match('(')) {
+            const body = this.skip('(', ')');
+            value = name + body;
+        }
+        // Parse an optional trailing colon type.
+        // Reference: DialectSymbolParser.cpp line 264-267
+        let type = null;
+        if (this.accept(':')) {
+            type = this.parseType();
+        }
+        return { value, type };
     }
 
     parseOptionalAttribute(type) {
@@ -5830,6 +5840,12 @@ mlir.AffineDialect = class extends mlir.Dialect {
         if (opName === 'affine.load') {
             return this._parseLoadOp(parser, op);
         }
+        if (opName === 'affine.vector_load') {
+            return this._parseVectorLoadOp(parser, op);
+        }
+        if (opName === 'affine.vector_store') {
+            return this._parseVectorStoreOp(parser, op);
+        }
         return super.parseOperation(parser, opName, op);
     }
 
@@ -5976,6 +5992,39 @@ mlir.AffineDialect = class extends mlir.Dialect {
         if (parser.accept(':')) {
             const type = parser.parseType();
             op.operands[0].type = type;
+        }
+        return true;
+    }
+
+    _parseVectorLoadOp(parser, op) {
+        const memref = parser.expect('%');
+        op.operands.push({ value: memref });
+        parser.skip('[', ']');
+        parser.parseOptionalAttrDict(op.attributes);
+        if (parser.accept(':')) {
+            const memrefType = parser.parseType();
+            op.operands[0].type = memrefType;
+            parser.expect(',');
+            const vectorType = parser.parseType();
+            op.results.push({ type: vectorType });
+        }
+        return true;
+    }
+
+    _parseVectorStoreOp(parser, op) {
+        const value = parser.expect('%');
+        op.operands.push({ value });
+        parser.expect(',');
+        const memref = parser.expect('%');
+        op.operands.push({ value: memref });
+        parser.skip('[', ']');
+        parser.parseOptionalAttrDict(op.attributes);
+        if (parser.accept(':')) {
+            const memrefType = parser.parseType();
+            op.operands[1].type = memrefType;
+            parser.expect(',');
+            const vectorType = parser.parseType();
+            op.operands[0].type = vectorType;
         }
         return true;
     }
@@ -6364,7 +6413,9 @@ mlir.TorchDialect = class extends mlir.Dialect {
             parser.resolveOperands(op.operands, parser.parseTypeList());
         }
         if (parser.accept('->')) {
-            parser.resolveOperands(op.results, parser.parseTypeList());
+            // Handle both -> (type, type) and -> type, type syntaxes
+            const types = parser.match('(') ? parser.parseTypeListParens() : parser.parseTypeListNoParens();
+            parser.resolveOperands(op.results, types);
         }
         if (parser.match('{')) {
             const region = {};
@@ -10836,6 +10887,22 @@ mlir.AMDGPUDialect = class extends mlir.Dialect {
     }
 };
 
+mlir.NVGPUDialect = class extends mlir.Dialect {
+
+    constructor(operations) {
+        super('nvgpu', operations);
+        this.registerCustomType('NVGPU_TensorMapDescriptor', this._parseTensorMapDescriptor.bind(this));
+    }
+
+    _parseTensorMapDescriptor(parser) {
+        if (parser.match('<')) {
+            const content = parser.skip('<', '>');
+            return new mlir.Type(`!nvgpu.tensormap.descriptor${content}`);
+        }
+        return null;
+    }
+};
+
 mlir.NVVMDialect = class extends mlir.Dialect {
 
     constructor(operations) {
@@ -13952,6 +14019,101 @@ mlir.ACCDialect = class extends mlir.Dialect {
 
     constructor(operations) {
         super('acc', operations);
+        this.registerCustomDirective('Var', this._parseVar.bind(this));
+        this.registerCustomDirective('AccVar', this._parseAccVar.bind(this));
+        this.registerCustomDirective('VarPtrType', this._parseVarPtrType.bind(this));
+        this.registerCustomDirective('DeviceTypeOperandsWithKeywordOnly', this._parseDeviceTypeOperandsWithKeywordOnly.bind(this));
+    }
+
+    _parseVar(parser, op) {
+        if (!parser.accept('id', 'varPtr')) {
+            parser.expect('id', 'var');
+        }
+        parser.expect('(');
+        const operand = parser.parseOperand();
+        op.operands.push(operand);
+    }
+
+    _parseAccVar(parser, op) {
+        if (!parser.accept('id', 'accPtr')) {
+            parser.expect('id', 'accVar');
+        }
+        parser.expect('(');
+        const operand = parser.parseOperand();
+        op.operands.push(operand);
+        parser.expect(':');
+        operand.type = parser.parseType();
+        parser.expect(')');
+    }
+
+    _parseVarPtrType(parser, op) {
+        const type = parser.parseType();
+        if (op.operands.length > 0) {
+            op.operands[op.operands.length - 1].type = type;
+        }
+        parser.expect(')');
+        if (parser.accept('id', 'varType')) {
+            parser.expect('(');
+            const varType = parser.parseType();
+            op.attributes.push({ name: 'varType', value: varType });
+            parser.expect(')');
+        }
+    }
+
+    _parseDeviceTypeOperandsWithKeywordOnly() {
+    }
+};
+
+mlir.SMTDialect = class extends mlir.Dialect {
+
+    constructor(operations) {
+        super('smt', operations);
+    }
+
+    parseOperation(parser, opName, op) {
+        if (opName === 'smt.eq' || opName === 'smt.distinct') {
+            return this._parseSameOperandTypeVariadicToBoolOp(parser, op);
+        }
+        if (opName === 'smt.bv.repeat') {
+            return this._parseRepeatOp(parser, op);
+        }
+        if (opName === 'smt.int.constant') {
+            return this._parseIntConstantOp(parser, op);
+        }
+        return super.parseOperation(parser, opName, op);
+    }
+
+    _parseSameOperandTypeVariadicToBoolOp(parser, op) {
+        const operands = parser.parseOperandList();
+        op.operands = operands;
+        parser.parseOptionalAttrDict(op.attributes);
+        parser.expect(':');
+        const type = parser.parseType();
+        for (const operand of op.operands) {
+            operand.type = type;
+        }
+        return true;
+    }
+
+    _parseRepeatOp(parser, op) {
+        const count = parser.parseInteger();
+        op.attributes.push({ name: 'count', value: count });
+        parser.expect('id', 'times');
+        const operand = {};
+        operand.value = parser.expect('%');
+        op.operands.push(operand);
+        parser.parseOptionalAttrDict(op.attributes);
+        parser.expect(':');
+        const inputType = parser.parseType();
+        op.operands[0].type = inputType;
+        return true;
+    }
+
+    _parseIntConstantOp(parser, op) {
+        const value = parser.parseInteger();
+        op.attributes.push({ name: 'value', value });
+        parser.parseOptionalAttrDict(op.attributes);
+        return true;
     }
 };
 
