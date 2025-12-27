@@ -184,12 +184,6 @@ mlir.Graph = class {
         this.nodes = [];
         this.metadata = [];
         const tensors = new Map();
-        const tensor = (arg) => {
-            if (!tensors.has(arg.name)) {
-                tensors.set(arg.name, new mlir.Value(arg.name, arg.type, null, arg.value));
-            }
-            return tensors.get(arg.name);
-        };
         // Handle function inputs/outputs if function_type exists
         if (func.attributes.has('function_type')) {
             const function_type = func.attributes.get('function_type');
@@ -270,7 +264,7 @@ mlir.Graph = class {
                                 value: input.value
                             });
                         } else if (typeof input.value === 'string' && input.value) {
-                            const value = values.map(input);
+                            const value = values.map(input.value);
                             value.to.push(operation);
                             const args = [{ name: input.value, type: input.type }];
                             operation.operands.push({
@@ -304,6 +298,36 @@ mlir.Graph = class {
                 }
             }
         }
+        // Build map of single-use constant tensors to convert to initializers
+        const constantMap = new Map();
+        const constantTypes = new Set([
+            'tosa.const', 'stablehlo.constant', 'arith.constant',
+            'mhlo.constant', 'torch.constant.tensor'
+        ]);
+        for (const op of operations) {
+            if (constantTypes.has(op.type) &&
+                op.operands.length === 0 &&
+                op.results.length === 1 &&
+                op.results[0].value.length === 1) {
+                const result = op.results[0].value[0];
+                if (result.to && result.to.length === 1) {
+                    const valueAttr = op.attributes.get('value');
+                    if (valueAttr instanceof mlir.DenseElementsAttr &&
+                        valueAttr.type && valueAttr.type.toString().startsWith('tensor<')) {
+                        const type = mlir.Utility.valueType(valueAttr.type);
+                        constantMap.set(result.name, new mlir.Tensor(type, valueAttr.value));
+                        op.delete = true;
+                    }
+                }
+            }
+        }
+        const tensor = (arg) => {
+            if (!tensors.has(arg.name)) {
+                const initializer = constantMap.get(arg.name) || null;
+                tensors.set(arg.name, new mlir.Value(arg.name, arg.type, null, initializer));
+            }
+            return tensors.get(arg.name);
+        };
         for (const input of this.inputs) {
             for (const arg of input.value) {
                 if (!tensors.has(arg.name)) {
