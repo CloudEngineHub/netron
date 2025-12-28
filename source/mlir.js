@@ -3522,14 +3522,14 @@ mlir.AttrTypeReader = class {
             case 9: { // ComplexType
                 const elementTypeIdx = reader.varint().toNumber();
                 const elementType = this.readType(elementTypeIdx);
-                return new mlir.Type(`complex<${elementType.name}>`);
+                return new mlir.Type(`complex<${elementType.toString()}>`);
             }
             case 10: { // MemRefType
                 const shape = this._readShape(reader);
                 const elementTypeIdx = reader.varint().toNumber();
                 const elementType = this.readType(elementTypeIdx);
                 // Skip layout and memory space for now
-                return new mlir.Type(`memref<${shape.join('x')}x${elementType.name}>`);
+                return new mlir.Type(`memref<${shape.join('x')}x${elementType.toString()}>`);
             }
             case 11: { // MemRefTypeWithLayout - skip for now
                 return new mlir.Type('memref<?>');
@@ -3558,17 +3558,17 @@ mlir.AttrTypeReader = class {
                     const typeIdx = reader.varint().toNumber();
                     types.push(this.readType(typeIdx));
                 }
-                return new mlir.Type(`tuple<${types.map((t) => t.name).join(', ')}>`);
+                return new mlir.Type(`tuple<${types.map((t) => t.toString()).join(', ')}>`);
             }
             case 16: { // UnrankedMemRefType
                 const elementTypeIdx = reader.varint().toNumber();
                 const elementType = this.readType(elementTypeIdx);
-                return new mlir.Type(`memref<*x${elementType.name}>`);
+                return new mlir.Type(`memref<*x${elementType.toString()}>`);
             }
             case 17: { // UnrankedTensorType
                 const elementTypeIdx = reader.varint().toNumber();
                 const elementType = this.readType(elementTypeIdx);
-                return new mlir.Type(`tensor<*x${elementType.name}>`);
+                return new mlir.Type(`tensor<*x${elementType.toString()}>`);
             }
             case 18: { // VectorType
                 const shape = this._readShape(reader);
@@ -4592,7 +4592,7 @@ mlir.RankedTensorType = class extends mlir.Type {
     }
 
     getNumElements() {
-        if (this.shape.some((d) => d < 0)) {
+        if (this.shape.some((d) => d < 0 || d === '?')) {
             return 0; // Dynamic dimensions
         }
         return this.shape.length === 0 ? 1 : this.shape.reduce((a, b) => a * b, 1);
@@ -4627,6 +4627,9 @@ mlir.VectorType = class extends mlir.Type {
     }
 
     getNumElements() {
+        if (this.shape.some((d) => d < 0 || d === '?')) {
+            return 0; // Dynamic dimensions
+        }
         return this.shape.length === 0 ? 1 : this.shape.reduce((a, b) => a * b, 1);
     }
 
