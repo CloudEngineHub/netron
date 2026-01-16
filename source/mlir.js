@@ -671,7 +671,7 @@ mlir.Node = class {
                     value = new mlir.Tensor(mlir.Utility.valueType(attr.type), attr.value);
                     type = 'tensor';
                 } else if (attr instanceof _.DenseResourceElementsAttr) {
-                    value = new mlir.Tensor(mlir.Utility.valueType(attr.type), null);
+                    value = new mlir.Tensor(mlir.Utility.valueType(attr.type), attr.value);
                     type = 'tensor';
                 } else if (attr instanceof _.DenseArrayAttr) {
                     value = attr.value;
@@ -1231,16 +1231,29 @@ _.DenseElementsAttr = class extends _.Attribute {
     }
 };
 
+_.DenseResourceElementsHandle = class {
+
+    constructor(key, blob = null) {
+        this.key = key;
+        this.blob = blob;
+    }
+};
+
 _.DenseResourceElementsAttr = class extends _.Attribute {
 
-    constructor(handle, type) {
+    constructor(type, handle) {
         super();
-        this.handle = handle;
         this.type = type;
+        this.rawHandle = handle;
+    }
+
+    get value() {
+        return this.rawHandle ? this.rawHandle.blob : null;
     }
 
     toString() {
-        return `dense_resource<${this.handle}>`;
+        const key = this.rawHandle ? this.rawHandle.key : 'unknown';
+        return `dense_resource<${key}>`;
     }
 };
 
@@ -1726,7 +1739,7 @@ _.Lexer = class {
                     this._position = this._currentPosition;
                     continue;
                 case '/':
-                    if (this._peek() !== '/' && this._peek() !== '*') {
+                    if (this._peek() !== '/') {
                         this._read();
                         return this.getToken('/', '/');
                     }
@@ -1895,27 +1908,12 @@ _.Lexer = class {
 
     lexComment() {
         this._read('/');
-        if (this._current === '/') {
-            while (this._current && this._current !== '\n') {
-                this._read();
-            }
-            return;
+        if (this._current !== '/') {
+            throw new mlir.Error(`Invalid comment.`);
         }
-        // Workaround: Block comments (/* */) are not in MLIR we support them for compatibility with test files that contain documentation
-        if (this._current === '*') {
+        while (this._current && this._current !== '\n') {
             this._read();
-            while (this._current) {
-                if (this._current === '*') {
-                    this._read();
-                    if (this._current === '/') {
-                        this._read();
-                        return;
-                    }
-                }
-                this._read();
-            }
         }
-        throw new mlir.Error(`Invalid comment.`);
     }
 
     lexNumber() {
@@ -3356,6 +3354,12 @@ _.Parser = class {
         return new _.OpaqueAttr(name, symbolData, null);
     }
 
+    parseResourceHandle(/* dialect */) {
+        const name = this.expect();
+        // const resources = this.state.symbols.dialectResources;
+        return name;
+    }
+
     parseDenseElementsAttr(attrType) {
         this.expect('id');
         this.expect('<');
@@ -3373,14 +3377,15 @@ _.Parser = class {
     parseDenseResourceElementsAttr(attrType) {
         this.expect('id', 'dense_resource');
         this.expect('<');
-        const handle = this.expect();
+        const rawHandle = this.parseResourceHandle(this.context.getLoadedDialect('builtin'));
         this.expect('>');
         let type = attrType;
         if (!type) {
             this.expect(':');
             type = this.parseType();
         }
-        return new _.DenseResourceElementsAttr(handle, type);
+        const handle = new _.DenseResourceElementsHandle(rawHandle);
+        return new _.DenseResourceElementsAttr(type, handle);
     }
 
     parseDenseArrayAttr(/* attrType */) {
@@ -3697,7 +3702,7 @@ _.OperationParser = class extends _.Parser {
         } else if (this.match('string')) {
             op = this.parseGenericOperation();
         } else {
-            throw new mlir.Error(`Unexpected operation name '${this.getToken().value}' ${this.location()}`);
+            throw new mlir.Error(`${this.match('eof') ? 'Unexpected end of input' : `Unexpected operation name '${this.getToken().value}'`} ${this.location()}`);
         }
         if (!op) {
             throw new mlir.Error(`Failed to parse operation ${this.location()}`);
@@ -4709,6 +4714,10 @@ _.EncodingReader = class {
         return this._reader.position;
     }
 
+    empty() {
+        return this.position >= this.length;
+    }
+
     size() {
         return this._reader.length - this._reader.position;
     }
@@ -4810,6 +4819,28 @@ _.EncodingReader = class {
         }
         return entries[entryIdx];
     }
+
+    parseSection(checkSectionAlignment) {
+        const sectionIDAndHasAlignment = this.parseByte();
+        const length = this.parseVarInt().toNumber();
+        const sectionID = sectionIDAndHasAlignment & 0x7F;
+        const hasAlignment = sectionIDAndHasAlignment & 0x80;
+        if (sectionID >= 9) { // kNumSections
+            throw new mlir.Error(`Invalid section ID: ${sectionID}.`);
+        }
+        if (hasAlignment) {
+            const alignment = this.parseVarInt().toNumber();
+            checkSectionAlignment(alignment);
+            while (this.absolutePosition % alignment !== 0) {
+                const padding = this.parseByte();
+                if (padding !== 0xCB) { // kAlignmentByte
+                    throw new mlir.Error(`Expected alignment byte (0xCB), but got: 0x${padding.toString(16)}.`);
+                }
+            }
+        }
+        const sectionData = this.parseBytes(length);
+        return [sectionID, sectionData];
+    }
 };
 
 _.DialectBytecodeReader = class {
@@ -4874,6 +4905,10 @@ _.DialectReader = class extends _.DialectBytecodeReader {
     readBlob() {
         const size = this.reader.parseVarInt().toNumber();
         return this.reader.parseBytes(size);
+    }
+
+    readResourceHandle() {
+        return this.resourceReader.parseResourceHandle(this.reader);
     }
 
     readSignedVarInts() {
@@ -5209,27 +5244,68 @@ _.PropertiesSectionReader = class {
     }
 };
 
+_.AsmResourceEntryKind = {
+    Blob: 0,
+    Bool: 1,
+    String: 2
+};
+
 _.ResourceSectionReader = class {
 
     constructor() {
-        this._resources = [];
+        this.dialectResources = [];
     }
 
-    initialize(fileLoc, config, dialects, sectionData /*, offsetSectionData, dialectReader, bufferOwnerRef */) {
-        if (!sectionData) {
-            return;
-        }
-        const reader = new _.EncodingReader(sectionData);
-        const numExternalResourceGroups = reader.parseVarInt().toNumber();
+    initialize(fileLoc, config, stringReader, sectionData, offsetSectionData /*, dialectReader, bufferOwnerRef */) {
+        const resourceReader = new _.EncodingReader(sectionData);
+        const offsetReader = new _.EncodingReader(offsetSectionData);
+        const numExternalResourceGroups = offsetReader.parseVarInt().toNumber();
         for (let i = 0; i < numExternalResourceGroups; i++) {
-            reader.parseVarInt(); // key
-            const numResources = reader.parseVarInt().toNumber();
+            const key = stringReader.parseString(offsetReader);
+            const handler = config.getResourceParser(key);
+            this.parseGroup(handler);
+        }
+        while (!offsetReader.empty()) {
+            const dialectIdx = offsetReader.parseVarInt().toNumber();
+            const numResources = offsetReader.parseVarInt().toNumber();
             for (let j = 0; j < numResources; j++) {
-                reader.parseVarInt(); // key
-                reader.parseVarInt(); // offset
-                reader.parseByte(); // kind
+                const key = stringReader.parseString(offsetReader);
+                const resourceOffset = offsetReader.parseVarInt().toNumber();
+                const kind = offsetReader.parseByte();
+                let resourceValue = null;
+                if (resourceOffset > 0) {
+                    const data = resourceReader.parseBytes(resourceOffset);
+                    if (kind === _.AsmResourceEntryKind.Blob) {
+                        // Blob: alignment (varint), size (varint), then aligned data
+                        const blobReader = new _.EncodingReader(data);
+                        const alignment = blobReader.parseVarInt().toNumber();
+                        const dataSize = blobReader.parseVarInt().toNumber();
+                        // Skip alignment padding
+                        while (blobReader.absolutePosition % alignment !== 0 && blobReader.position < data.length) {
+                            blobReader.parseByte();
+                        }
+                        const blobData = blobReader.parseBytes(dataSize);
+                        resourceValue = { kind: 'blob', data: blobData, alignment, key };
+                    } else if (kind === _.AsmResourceEntryKind.Bool) {
+                        const boolReader = new _.EncodingReader(data);
+                        resourceValue = { kind: 'bool', value: boolReader.parseByte() !== 0, key };
+                    } else if (kind === _.AsmResourceEntryKind.String) {
+                        const strReader = new _.EncodingReader(data);
+                        resourceValue = { kind: 'string', value: stringReader.parseString(strReader), key };
+                    }
+                }
+                this.dialectResources.push({
+                    dialectIdx,
+                    key,
+                    kind,
+                    value: resourceValue
+                });
             }
         }
+    }
+
+    parseResourceHandle(reader) {
+        return reader.parseEntry(this.dialectResources, "resource handle");
     }
 };
 
@@ -5257,29 +5333,13 @@ _.BytecodeReader = class {
         this._bufferStart = reader instanceof Uint8Array ? reader.byteOffset : 0;
     }
 
-    checkSectionAlignment(alignment) {
-        // Check that the bytecode buffer meets the requested section alignment.
-        // In JavaScript, we validate the byteOffset within the ArrayBuffer.
-        // This ensures the buffer offset is aligned to the requested alignment.
-        if (!Number.isInteger(alignment) || alignment <= 0 || (alignment & (alignment - 1)) !== 0) {
-            throw new mlir.Error(`Invalid alignment value: ${alignment} (must be a power of 2).`);
-        }
-        const isGloballyAligned = (this._bufferStart & (alignment - 1)) === 0;
-        if (!isGloballyAligned) {
-            throw new mlir.Error(`Expected section alignment ${alignment} but bytecode buffer offset 0x${this._bufferStart.toString(16)} is not aligned.`);
-        }
-    }
-
     read() {
         const reader = this.reader;
         const signature = reader.parseBytes(4);
         if (String.fromCharCode(...signature) !== 'ML\xEFR') {
             throw new mlir.Error('Invalid MLIR bytecode signature.');
         }
-        this.version = reader.parseVarInt().toNumber();
-        if (this.version < 0 || this.version > 6) { // kMinSupportedVersion and kVersion
-            throw new mlir.Error(`Invalid MLIR bytecode version '${this.version}'.`);
-        }
+        this.parseVersion(reader);
         this.producer = reader.parseNullTerminatedString();
         const sectionDatas = new Map();
         while (reader.position < reader.length) {
@@ -5321,6 +5381,28 @@ _.BytecodeReader = class {
         this.parseResourceSection(sectionDatas.get(5), sectionDatas.get(6));
         this.attrTypeReader.initialize(this.dialects, sectionDatas.get(2), sectionDatas.get(3));
         return this.parseIRSection(sectionDatas.get(4));
+    }
+
+    checkSectionAlignment(alignment) {
+        // Check that the bytecode buffer meets the requested section alignment.
+        // In JavaScript, we validate the byteOffset within the ArrayBuffer.
+        // This ensures the buffer offset is aligned to the requested alignment.
+        if (!Number.isInteger(alignment) || alignment <= 0 || (alignment & (alignment - 1)) !== 0) {
+            throw new mlir.Error(`Invalid alignment value: ${alignment} (must be a power of 2).`);
+        }
+        const isGloballyAligned = (this._bufferStart & (alignment - 1)) === 0;
+        if (!isGloballyAligned) {
+            throw new mlir.Error(`Expected section alignment ${alignment} but bytecode buffer offset 0x${this._bufferStart.toString(16)} is not aligned.`);
+        }
+    }
+
+    parseVersion(reader) {
+        this.version = reader.parseVarInt().toNumber();
+        const kVersion = 6;
+        const kMinSupportedVersion = 0;
+        if (this.version < kMinSupportedVersion || this.version > kVersion) {
+            throw new mlir.Error(`Unsupported MLIR bytecode version '${this.version}'.`);
+        }
     }
 
     parseDialectSection(sectionData) {
@@ -5370,12 +5452,12 @@ _.BytecodeReader = class {
         }
     }
 
-    parseResourceSection(reader, resourceData, resourceOffsetData) {
-        if (!resourceData) {
+    parseResourceSection(resourceData, resourceOffsetData) {
+        if (!resourceOffsetData) {
             return true;
         }
-        const dialectReader = new _.DialectReader(this.attrTypeReader, this.stringReader, this.resourceReader, this.dialectsMap, reader, this.version);
-        return this.resourceReader.initialize(this.fileLoc, this.config, this.stringReader, resourceData, resourceOffsetData, dialectReader, this.bufferOwnerRef);
+        const dialectReader = new _.DialectReader(this.attrTypeReader, this.stringReader, this.resourceReader, this.dialectsMap, new _.EncodingReader(resourceData || new Uint8Array(0)), this.version);
+        return this.resourceReader.initialize(this.fileLoc, this.config, this.stringReader, resourceData, resourceOffsetData, dialectReader);
     }
 
     parseIRSection(sectionData) {
@@ -5392,7 +5474,8 @@ _.BytecodeReader = class {
             numValues: 0,
             blocks: [block],
             nextValueIdx: 0,
-            isTopLevel: true
+            isTopLevel: true,
+            reader
         }];
         const firstBlockHeader = this.parseBlockHeader(reader);
         regionStack[0].numOpsRemaining = firstBlockHeader.numOps;
@@ -5401,12 +5484,59 @@ _.BytecodeReader = class {
             this.parseBlockArguments(reader, block, scope, 0);
             regionStack[0].nextValueIdx = block.arguments ? block.arguments.length : 0;
         }
+        // Iteratively parse regions until everything has been resolved.
         while (regionStack.length > 0) {
-            const state = regionStack[regionStack.length - 1];
-            let pushedRegions = false;
-            while (state.numOpsRemaining > 0 && !pushedRegions) {
-                state.numOpsRemaining--;
-                const { state: opState, resultNames, isIsolatedFromAbove, resultIndices } = this.parseOpWithoutRegions(reader, state);
+            this.parseRegions(regionStack, regionStack[regionStack.length - 1]);
+        }
+        return block;
+    }
+
+    parseRegion(readState) {
+        const reader = readState.reader;
+        // Parse the number of blocks in the region.
+        const numBlocks = reader.parseVarInt().toNumber();
+        // If the region is empty, there is nothing else to do.
+        if (numBlocks === 0) {
+            return false;
+        }
+        // Parse the number of values defined in this region.
+        const numValues = reader.parseVarInt().toNumber();
+        readState.numValues = numValues;
+        readState.numBlocks = numBlocks;
+        // Create the blocks within this region.
+        const blocks = [];
+        for (let j = 0; j < numBlocks; j++) {
+            blocks.push({ operations: [], arguments: [] });
+        }
+        readState.blocks = blocks;
+        readState.region.blocks = blocks;
+        // Prepare the current value scope for this region.
+        const scope = this.valueScopes[this.valueScopes.length - 1];
+        const valueOffset = scope.length;
+        readState.valueOffset = valueOffset;
+        for (let j = 0; j < numValues; j++) {
+            scope.push(null);
+        }
+        // Parse the entry block of the region.
+        readState.curBlock = 0;
+        const blockHeader = this.parseBlockHeader(reader);
+        readState.numOpsRemaining = blockHeader.numOps;
+        if (blockHeader.hasArgs) {
+            this.parseBlockArguments(reader, blocks[0], scope, valueOffset);
+        }
+        const numBlockArgs = blocks[0].arguments ? blocks[0].arguments.length : 0;
+        readState.nextValueIdx = valueOffset + numBlockArgs;
+        return true;
+    }
+
+    parseRegions(regionStack, readState) {
+        const reader = readState.reader;
+        while (true) {
+            while (readState.numOpsRemaining > 0) {
+                readState.numOpsRemaining--;
+                // Read in the next operation. We don't read its regions directly,
+                // we handle those afterwards as necessary.
+                const { state: opState, resultNames, isIsolatedFromAbove, resultIndices } = this.parseOpWithoutRegions(reader, readState);
                 const op = _.Operation.create(opState);
                 // Assign result names for Netron display (reference: names are in parser symbol table)
                 // Also update the value scope to replace placeholders with actual OpResult objects
@@ -5421,104 +5551,70 @@ _.BytecodeReader = class {
                         }
                     }
                 }
-                state.blocks[state.curBlock].operations.push(op);
+                readState.blocks[readState.curBlock].operations.push(op);
                 if (op.regions && op.regions.length > 0) {
                     for (let i = op.regions.length - 1; i >= 0; i--) {
                         const region = op.regions[i];
-                        const regionReader = reader;
-                        if (this.version >= 2 && isIsolatedFromAbove) { // kLazyLoading
-                            const sectionIDAndHasAlignment = reader.parseByte();
-                            /* const sectionID = sectionIDAndHasAlignment & 0x7F; */
-                            reader.parseVarInt(); // section length
-                            const hasAlignment = sectionIDAndHasAlignment & 0x80;
-                            if (hasAlignment) {
-                                const alignment = reader.parseVarInt().toNumber();
-                                // Validate that the buffer can satisfy the requested alignment
-                                this.checkSectionAlignment(alignment);
-                                // Align the reader position and validate padding bytes
-                                while (reader.absolutePosition % alignment !== 0) {
-                                    const padding = reader.parseByte();
-                                    if (padding !== 0xCB) {
-                                        throw new mlir.Error(`Expected alignment byte (0xCB), but got: 0x${padding.toString(16)}.`);
-                                    }
-                                }
-                            }
-                        }
-                        const numBlocks = regionReader.parseVarInt().toNumber();
-                        if (numBlocks === 0) {
-                            continue;
-                        }
-                        const numValues = regionReader.parseVarInt().toNumber();
-                        const blocks = [];
-                        for (let j = 0; j < numBlocks; j++) {
-                            blocks.push({ operations: [], arguments: [] });
-                        }
-                        region.blocks = blocks;
-                        if (isIsolatedFromAbove) {
-                            this.valueScopes.push([]);
-                        }
-                        const scope = this.valueScopes[this.valueScopes.length - 1];
-                        const valueOffset = scope.length;
-                        for (let j = 0; j < numValues; j++) {
-                            scope.push(null);
-                        }
-                        const blockHeader = this.parseBlockHeader(regionReader);
-                        if (blockHeader.hasArgs) {
-                            this.parseBlockArguments(regionReader, blocks[0], scope, valueOffset);
-                        }
-                        const numBlockArgs = blocks[0].arguments ? blocks[0].arguments.length : 0;
-                        regionStack.push({
+                        const childState = {
                             region,
                             curRegion: 0,
                             numRegions: 1,
                             curBlock: 0,
-                            numBlocks,
-                            numOpsRemaining: blockHeader.numOps,
-                            numValues,
-                            blocks,
-                            valueOffset,
-                            nextValueIdx: valueOffset + numBlockArgs,
-                            isIsolated: isIsolatedFromAbove
-                        });
-                        pushedRegions = true;
+                            numBlocks: 0,
+                            numOpsRemaining: 0,
+                            numValues: 0,
+                            blocks: [],
+                            valueOffset: 0,
+                            nextValueIdx: 0,
+                            isIsolated: isIsolatedFromAbove,
+                            reader,
+                            owningReader: null
+                        };
+                        // Isolated regions are encoded as a section in version 2 and above.
+                        if (this.version >= 2 && isIsolatedFromAbove) { // kLazyLoading
+                            const checkSectionAlignment = (alignment) => {
+                                this.checkSectionAlignment(alignment);
+                            };
+                            const [sectionID, sectionData] = reader.parseSection(checkSectionAlignment);
+                            if (sectionID !== 4) { // kIR
+                                throw new mlir.Error(`Expected IR section for region.`);
+                            }
+                            childState.owningReader = new _.EncodingReader(sectionData);
+                            childState.reader = childState.owningReader;
+                        }
+                        // If the op is isolated from above, push a new value scope.
+                        if (isIsolatedFromAbove) {
+                            this.valueScopes.push([]);
+                        }
+                        // Parse the region and push to stack if non-empty
+                        if (this.parseRegion(childState)) {
+                            regionStack.push(childState);
+                            return;
+                        }
                     }
                 }
             }
-
-            // If we pushed regions, continue outer loop to process them first
-            if (pushedRegions) {
-                continue;
+            // Move to the next block of the region.
+            readState.curBlock++;
+            if (readState.curBlock >= readState.numBlocks) {
+                break;
             }
-
-            // Check if we need to move to next block or pop the stack
-            if (state.numOpsRemaining === 0) {
-                state.curBlock++;
-                if (state.curBlock < state.numBlocks) {
-                    // Parse next block header
-                    const blockHeader = this.parseBlockHeader(reader);
-                    state.numOpsRemaining = blockHeader.numOps;
-                    if (blockHeader.hasArgs) {
-                        const scope = this.valueScopes[this.valueScopes.length - 1];
-                        // Block arguments start at current nextValueIdx
-                        const argOffset = state.nextValueIdx ?? 0;
-                        this.parseBlockArguments(reader, state.blocks[state.curBlock], scope, argOffset);
-                        // Update nextValueIdx to account for block arguments
-                        const numBlockArgs = state.blocks[state.curBlock].arguments ? state.blocks[state.curBlock].arguments.length : 0;
-                        if (state.nextValueIdx !== undefined) {
-                            state.nextValueIdx += numBlockArgs;
-                        }
-                    }
-                } else {
-                    // Pop this region
-                    if (state.isIsolated) {
-                        this.valueScopes.pop();
-                    }
-                    regionStack.pop();
+            const blockHeader = this.parseBlockHeader(reader);
+            readState.numOpsRemaining = blockHeader.numOps;
+            if (blockHeader.hasArgs) {
+                const scope = this.valueScopes[this.valueScopes.length - 1];
+                const argOffset = readState.nextValueIdx ?? 0;
+                this.parseBlockArguments(reader, readState.blocks[readState.curBlock], scope, argOffset);
+                const numBlockArgs = readState.blocks[readState.curBlock].arguments ? readState.blocks[readState.curBlock].arguments.length : 0;
+                if (readState.nextValueIdx !== undefined) {
+                    readState.nextValueIdx += numBlockArgs;
                 }
             }
         }
-
-        return block;
+        if (readState.isIsolated) {
+            this.valueScopes.pop();
+        }
+        regionStack.pop();
     }
 
     parseBlockHeader(reader) {
@@ -6671,6 +6767,10 @@ _.DialectContext = class {
 
     getOrLoadDialect(name) {
         return this._dialects.get(name);
+    }
+
+    getLoadedDialect(name) {
+        return this._dialects.has(name);
     }
 
     checkDialect(dialect, dialectName, context) {
@@ -13408,9 +13508,10 @@ _.TosaDialect = class extends _.Dialect {
         super(operations, 'tosa');
         this._customOps = new Set([
             'tosa.apply_scale', 'tosa.argmax', 'tosa.cast_from_block_scaled',
-            'tosa.cast_to_block_scaled', 'tosa.clamp', 'tosa.max_pool2d',
-            'tosa.maximum', 'tosa.minimum', 'tosa.reduce_max', 'tosa.reduce_min',
-            'tosa.rescale', 'tosa.resize', 'tosa.matmul_t_block_scaled'
+            'tosa.cast_to_block_scaled', 'tosa.clamp', 'tosa.conv2d_block_scaled',
+            'tosa.matmul_t_block_scaled', 'tosa.max_pool2d', 'tosa.maximum',
+            'tosa.minimum', 'tosa.reduce_max', 'tosa.reduce_min', 'tosa.rescale',
+            'tosa.resize'
         ]);
         this._regionOps = new Set(['tosa.cond_if', 'tosa.while_loop']);
         this.registerCustomDirective('VariableOpTypeOrInitialValue', this.parseVariableOpTypeOrInitialValue.bind(this));
@@ -13434,20 +13535,6 @@ _.TosaDialect = class extends _.Dialect {
 
     parseOperation(parser, result) {
         const opInfo = result.name.getRegisteredInfo();
-        /*
-        if (result.op === 'tosa.variable' && !opInfo.metadata.assemblyFormat) {
-            parser.parseSymbolName('sym_name', result.attributes);
-            if (parser.parseOptionalEqual()) {
-                const initialValue = parser.parseAttribute();
-                result.addAttribute('initial_value', initialValue);
-            }
-            if (parser.parseOptionalColon()) {
-                const type = parser.parseType();
-                result.addAttribute('type', type);
-            }
-            return true;
-        }
-        */
         if (this._regionOps.has(result.op)) {
             let hasBlockArgs = false;
             const unresolvedCond = [];
@@ -15659,8 +15746,9 @@ _.BuiltinDialect = class extends _.Dialect {
                 return { name: 'loc', value: 'unknown' };
             case 16: { // DenseResourceElementsAttr
                 const type = reader.readType();
-                const handleIdx = reader.readVarInt();
-                return new _.DenseResourceElementsAttr(`resource<${handleIdx}>`, type);
+                const resource = reader.readResourceHandle();
+                const handle = new _.DenseResourceElementsHandle(resource ? resource.key : 'unknown', resource && resource.kind === 'blob' ? resource.data : null);
+                return new _.DenseResourceElementsAttr(type, handle);
             }
             case 17: { // DenseArrayAttr
                 const type = reader.readType();
