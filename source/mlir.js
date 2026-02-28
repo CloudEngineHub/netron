@@ -4032,6 +4032,34 @@ _.Parser = class {
         return result;
     }
 
+    parseOptionalDecimalInteger() {
+        if (this.getToken().isNot(_.Token.integer) && this.getToken().isNot(_.Token.minus)) {
+            return null;
+        }
+        const negative = this.consumeIf(_.Token.minus);
+        const curTok = this.getToken();
+        this.parseToken(_.Token.integer, 'Expected integer value');
+        const spelling = curTok.spelling.str();
+        if (spelling[0] === '0' && spelling.length > 1 && spelling[1] === 'x') {
+            this.state.lex.resetPointer(curTok.loc.position + 1);
+            this.state.curToken = this.state.lex.lexToken();
+            return 0;
+        }
+        const result = curTok.spelling.getAsInteger(10);
+        if (result === null) {
+            throw new mlir.Error(`Integer value too large ${this.location()}`);
+        }
+        return negative ? -result : result;
+    }
+
+    parseDecimalInteger() {
+        const result = this.parseOptionalDecimalInteger();
+        if (result === null) {
+            throw new mlir.Error(`Expected decimal integer value ${this.location()}`);
+        }
+        return result;
+    }
+
     parseOptionalVerticalBar() {
         return this.consumeIf(_.Token.vertical_bar);
     }
@@ -5315,6 +5343,10 @@ _.AsmParser = class {
         return this.parser.parseOptionalString();
     }
 
+    parseOptionalKeywordOrString() {
+        return this.parser.parseOptionalKeywordOrString();
+    }
+
     parseString() {
         const value = this.parser.parseOptionalString();
         if (value === null) {
@@ -5327,8 +5359,16 @@ _.AsmParser = class {
         return this.parser.parseOptionalInteger();
     }
 
+    parseOptionalDecimalInteger() {
+        return this.parser.parseOptionalDecimalInteger();
+    }
+
     parseInteger() {
         return this.parser.parseInteger();
+    }
+
+    parseDecimalInteger() {
+        return this.parser.parseDecimalInteger();
     }
 
     parseCommaSeparatedList(delimiter, parseElement) {
@@ -5445,6 +5485,14 @@ _.AsmParser = class {
 
     parseOptionalMinus() {
         return this.parser.consumeIf(_.Token.minus);
+    }
+
+    parseOptionalEllipsis() {
+        return this.parser.consumeIf(_.Token.ellipsis);
+    }
+
+    parseOptionalPlus() {
+        return this.parser.consumeIf(_.Token.plus);
     }
 
     parseStar() {
@@ -5772,6 +5820,13 @@ _.CustomOpAsmParser = class extends _.OpAsmParser {
         return new _.OpAsmParser.Argument(ssaName, type, attrs, loc);
     }
 
+    parseOptionalArgument(allowType = false, allowAttrs = false) {
+        if (this.parser.getToken().is(_.Token.percent_identifier)) {
+            return this.parseArgument(allowType, allowAttrs);
+        }
+        return null;
+    }
+
     parseArgumentList(delimiter, allowType = false, allowAttrs = false) {
         delimiter = delimiter || 'none';
         if (delimiter === 'none') {
@@ -5786,6 +5841,28 @@ _.CustomOpAsmParser = class extends _.OpAsmParser {
             return null;
         };
         return this.parseCommaSeparatedList(delimiter, parseOneArgument);
+    }
+
+    parseAssignmentList(lhs, rhs) {
+        const result = this.parseOptionalAssignmentList(lhs, rhs);
+        if (!result) {
+            throw new mlir.Error(`expected '(' ${this.parser.location()}`);
+        }
+    }
+
+    parseOptionalAssignmentList(lhs, rhs) {
+        if (!this.parseOptionalLParen()) {
+            return false;
+        }
+        if (!this.parseOptionalRParen()) {
+            do {
+                lhs.push(this.parseArgument());
+                this.parseEqual();
+                rhs.push(this.parseOperand());
+            } while (this.parseOptionalComma());
+            this.parseRParen();
+        }
+        return true;
     }
 
     parseRegion(region, entryArguments, enableNameShadowing) {
@@ -11035,16 +11112,14 @@ _.StableHLODialect = class extends _.HLODialect {
             }
             return true;
         }
-        if (result.op === 'stablehlo.while' && parser.parseOptionalLParen()) {
-            // parseLParen already consumed by parseOptionalLParen check
-            return super.parseWhileOp(parser, result, true);
+        if (result.op === 'stablehlo.while') {
+            return super.parseWhileOp(parser, result);
         }
-        if (result.op === 'stablehlo.reduce' && parser.parseOptionalLParen()) {
-            // stablehlo uses DenseI64ArrayAttr for dimensions (like b.getDenseI64ArrayAttr in ref impl)
-            return super.parseReduceOp(parser, result, (dims) => dims, 'stablehlo.return', true);
+        if (result.op === 'stablehlo.reduce') {
+            return super.parseReduceOp(parser, result, (dims) => dims, 'stablehlo.return');
         }
-        if (result.op === 'stablehlo.scan' && parser.parseOptionalLParen()) {
-            return super.parseScanOp(parser, result, 'stablehlo.return', true);
+        if (result.op === 'stablehlo.scan') {
+            return super.parseScanOp(parser, result, 'stablehlo.return');
         }
         return super.parseOperation(parser, result);
     }
@@ -13416,10 +13491,7 @@ _.FlowDialect = class extends _.IREEDialect {
                 result.addAttribute('sym_name', symName);
             }
             parser.parseOptionalAttrDictWithKeyword(result.attributes);
-            if (parser.parser.getToken().is(_.Token.l_brace)) {
-                const region = result.addRegion();
-                parser.parseRegion(region);
-            }
+            parser.parseOptionalRegion(result.addRegion());
             return true;
         }
         if (result.op === 'flow.func') {
@@ -14674,19 +14746,16 @@ _.LinalgDialect = class extends _.Dialect {
             return true;
         }
         if (result.op === 'linalg.fill') {
-            // Form 1: ins/outs format - use parseNamedStructuredOp
-            if (parser.parser.getToken().is(_.Token.bare_identifier) && parser.parser.getTokenSpelling().str() === 'ins' || parser.parser.getToken().is(_.Token.l_brace) || parser.parser.getToken().is(_.Token.less)) {
-                return this.parseNamedStructuredOp(parser, result);
-            }
-            let unresolvedOperands = [];
             if (parser.parseOptionalLParen()) {
-                unresolvedOperands = parser.parseOperandList();
+                // Legacy format: linalg.fill(%operands) : types -> types
+                const unresolvedOperands = parser.parseOperandList();
                 parser.parseRParen();
+                parser.parseOptionalAttrDict(result.attributes);
+                parser.resolveOperands(unresolvedOperands, parser.parseOptionalColonTypeList(), result.operands);
+                result.addTypes(parser.parseOptionalArrowTypeList());
+                return true;
             }
-            parser.parseOptionalAttrDict(result.attributes);
-            parser.resolveOperands(unresolvedOperands, parser.parseOptionalColonTypeList(), result.operands);
-            result.addTypes(parser.parseOptionalArrowTypeList());
-            return true;
+            return this.parseNamedStructuredOp(parser, result);
         }
         if (result.op === 'linalg.conv') {
             let unresolvedOperands = [];
@@ -14786,33 +14855,17 @@ _.LinalgDialect = class extends _.Dialect {
         if (opInfo.metadata && opInfo.metadata.assemblyFormat) {
             return super.parseOperation(parser, result);
         }
-        if (parser.parser.getToken().is(_.Token.l_brace) || parser.parser.getToken().is(_.Token.bare_identifier) && parser.parser.getTokenSpelling().str() === 'ins' || parser.parser.getToken().is(_.Token.bare_identifier) && parser.parser.getTokenSpelling().str() === 'outs') {
-            const parsed = this.parseCommonStructuredOpParts(parser, result);
-            if (!parsed) {
-                return false;
-            }
-            if (parser.parseOptionalKeyword('attrs')) {
-                parser.parseEqual();
-                parser.parseOptionalAttrDict(result.attributes);
-            } else if (parser.parser.getToken().is(_.Token.l_brace) && parser.parser.getTokenSpelling().str() !== '^') {
-                const saved = parser.parser.getToken().loc.position;
-                parser.parseLBrace();
-                if (parser.parser.getToken().isNot(_.Token.percent_identifier) && parser.parser.getToken().isNot(_.Token.bare_identifier)) {
-                    parser.parser.resetToken(saved);
-                } else {
-                    parser.parser.resetToken(saved);
-                    parser.parseOptionalAttrDict(result.attributes);
-                }
-            }
-            result.addTypes(parser.parseOptionalArrowTypeList());
-            // Parse region (for generic ops)
-            if (parser.parser.getToken().is(_.Token.l_brace)) {
-                const region = result.addRegion();
-                parser.parseRegion(region, []);
-            }
-            return true;
+        const parsed = this.parseCommonStructuredOpParts(parser, result);
+        if (!parsed) {
+            return false;
         }
-        return false;
+        if (parser.parseOptionalKeyword('attrs')) {
+            parser.parseEqual();
+            parser.parseOptionalAttrDict(result.attributes);
+        }
+        result.addTypes(parser.parseOptionalArrowTypeList());
+        parser.parseOptionalRegion(result.addRegion(), []);
+        return true;
     }
 
     // "Common parsing used for both named structured ops created by ods-gen and by
@@ -14987,63 +15040,13 @@ _.LinalgDialect = class extends _.Dialect {
         } else {
             result.addAttribute('trait', optAttr);
         }
-        parser.parseOptionalAttrDict(result.attributes);
-        if (parser.parseOptionalKeyword('ins')) {
-            parser.parseLParen();
-            const unresolvedIns = [];
-            let insOp = parser.parseOptionalOperand();
-            while (insOp) {
-                unresolvedIns.push(insOp);
-                if (!parser.parseOptionalComma()) {
-                    break;
-                }
-                insOp = parser.parseOptionalOperand();
-            }
-            if (parser.parseOptionalColon()) {
-                const insTypes = [];
-                if (!parser.parseOptionalRParen()) {
-                    do {
-                        insTypes.push(parser.parseType());
-                    } while (parser.parseOptionalComma());
-                    parser.resolveOperands(unresolvedIns, insTypes, result.operands);
-                    parser.parseRParen();
-                }
-            } else {
-                parser.parseRParen();
-            }
-        }
-        if (parser.parseOptionalKeyword('outs')) {
-            parser.parseLParen();
-            const unresolvedOuts = [];
-            let outsOp = parser.parseOptionalOperand();
-            while (outsOp) {
-                unresolvedOuts.push(outsOp);
-                if (!parser.parseOptionalComma()) {
-                    break;
-                }
-                outsOp = parser.parseOptionalOperand();
-            }
-            if (parser.parseOptionalColon()) {
-                const outsTypes = [];
-                if (!parser.parseOptionalRParen()) {
-                    do {
-                        outsTypes.push(parser.parseType());
-                    } while (parser.parseOptionalComma());
-                    parser.resolveOperands(unresolvedOuts, outsTypes, result.operands);
-                    parser.parseRParen();
-                }
-            } else {
-                parser.parseRParen();
-            }
-        }
+        this.parseCommonStructuredOpParts(parser, result);
         if (parser.parseOptionalKeyword('attrs')) {
             parser.parseEqual();
             parser.parseOptionalAttrDict(result.attributes);
         }
-        if (parser.parser.getToken().is(_.Token.l_brace)) {
-            const region = result.addRegion();
-            parser.parseRegion(region);
-        }
+        const region = result.addRegion();
+        parser.parseRegion(region);
         result.addTypes(parser.parseOptionalArrowTypeList());
         return true;
     }
@@ -15315,35 +15318,26 @@ _.KrnlDialect = class extends _.Dialect {
             for (const operand of unresolvedOperands) {
                 parser.resolveOperand(operand, null, result.operands);
             }
-            if (parser.parseOptionalKeyword('with')) {
-                parser.parseLParen();
-                const numOptimizedLoops = result.operands.length;
-                while (parser.parser.getToken().isNot(_.Token.r_paren)) {
+            result.addAttribute('num_optimized_loops', result.operands.length);
+            parser.parseKeyword('with');
+            parser.parseLParen();
+            if (!parser.parseOptionalRParen()) {
+                parser.parseCommaSeparatedList('none', () => {
                     parser.parseOperand();
                     parser.parseArrow();
                     parser.parseOperand();
                     parser.parseEqual();
                     parser.parseOptionalKeyword('max');
-                    if (parser.parser.getToken().isAny(_.Token.kw_affine_map, _.Token.kw_affine_set)) {
-                        parser.parseAttribute();
-                        parser.parseOptionalBody(_.Token.l_paren);
-                        parser.parseOptionalBody(_.Token.l_square);
-                    } else {
-                        parser.parseAttribute();
-                    }
+                    parser.parseAttribute();
+                    parser.parseOptionalBody(_.Token.l_paren);
+                    parser.parseOptionalBody(_.Token.l_square);
                     parser.parseKeyword('to');
                     parser.parseOptionalKeyword('min');
-                    if (parser.parser.getToken().isAny(_.Token.kw_affine_map, _.Token.kw_affine_set)) {
-                        parser.parseAttribute();
-                        parser.parseOptionalBody(_.Token.l_paren);
-                        parser.parseOptionalBody(_.Token.l_square);
-                    } else {
-                        parser.parseAttribute();
-                    }
-                    parser.parseOptionalComma();
-                }
+                    parser.parseAttribute();
+                    parser.parseOptionalBody(_.Token.l_paren);
+                    parser.parseOptionalBody(_.Token.l_square);
+                });
                 parser.parseRParen();
-                result.addAttribute('num_optimized_loops', numOptimizedLoops);
             }
             if (parser.parseOptionalKeyword('iter_args')) {
                 parser.parseLParen();
@@ -15405,7 +15399,7 @@ _.MhloDialect = class extends _.HLODialect {
         if (result.op === 'mhlo.reduce') {
             return super.parseReduceOp(parser, result, (dims) => dims, 'mhlo.return');
         }
-        if (result.op === 'mhlo.scan' && parser.parser.getToken().is(_.Token.l_paren)) {
+        if (result.op === 'mhlo.scan') {
             return super.parseScanOp(parser, result, 'mhlo.return');
         }
         if (result.op === 'mhlo.while') {
@@ -15440,7 +15434,7 @@ _.ChloDialect = class extends _.HLODialect {
     }
 
     parseOperation(parser, result) {
-        if (result.op === 'chlo.scan' && parser.parser.getToken().is(_.Token.l_paren)) {
+        if (result.op === 'chlo.scan') {
             return super.parseScanOp(parser, result, 'stablehlo.return');
         }
         return super.parseOperation(parser, result);
@@ -15501,10 +15495,9 @@ _.THLODialect = class extends _.Dialect {
                 parser.parseRParen();
             }
         }
-        if (parser.parser.getToken().is(_.Token.l_brace)) {
+        if (parser.parseOptionalLBrace()) {
             const region = { blocks: [] };
             const block = { operations: [], arguments: blockArguments };
-            parser.parseLBrace();
             while (!parser.parseOptionalRBrace()) {
                 const operation = parser.parseOperation();
                 block.operations.push(_.Operation.create(operation));
@@ -15815,50 +15808,14 @@ _.ShardDialect = class extends _.Dialect {
     }
 
     parseDimensionList(parser, op, attrName) {
-        const dimensions = [];
-
-        while (true) {
-            if (parser.parseOptionalQuestion()) {
-                dimensions.push(-1);
-            } else {
-                const intVal = parser.parseOptionalInteger();
-                if (intVal === null) {
-                    break;
-                }
-                dimensions.push(intVal);
-            }
-
-            if (parser.parser.getToken().is(_.Token.bare_identifier)) {
-                const token = parser.parser.getTokenSpelling().str();
-                if (token === 'x') {
-                    parser.parser.consumeToken(_.Token.bare_identifier);
-                    continue;
-                } else if (token.startsWith('x')) {
-                    parser.parser.consumeToken(_.Token.bare_identifier);
-                    const remaining = token.substring(1);
-                    const parts = remaining.split('x');
-                    for (const part of parts) {
-                        if (part === '?') {
-                            dimensions.push(-1);
-                        } else if (part !== '') {
-                            const num = parseInt(part, 10);
-                            if (!isNaN(num)) {
-                                dimensions.push(num);
-                            }
-                        }
-                    }
-                    break;
-                }
-                break;
-            }
-
-            if (parser.parser.getToken().isNot(_.Token.bare_identifier) && parser.parser.getToken().isNot(_.Token.question)) {
-                break;
-            }
+        if (parser.parseOptionalLSquare()) {
+            parser.parseOptionalRSquare();
+            op.addAttribute(attrName, []);
+            return;
         }
-
+        const dimInfo = parser.parseDimensionList(true, false);
         if (attrName) {
-            op.addAttribute(attrName, dimensions);
+            op.addAttribute(attrName, dimInfo.dimensions);
         }
     }
 };
@@ -15970,8 +15927,12 @@ _.spirv.SPIRVDialect = class extends _.Dialect {
     parseType(parser, dialect) {
         let mnemonic = parser.parseOptionalKeyword();
         if (mnemonic) {
-            if (mnemonic === 'ptr' && parser.parser.getToken().is(_.Token.less)) {
-                return _.spirv.PointerType.parse(parser);
+            if (mnemonic === 'ptr' && parser.parseOptionalLess()) {
+                const pointeeType = parser.parseType();
+                parser.parseComma();
+                const storageClass = parser.parseKeyword();
+                parser.parseGreater();
+                return new _.spirv.PointerType(pointeeType, storageClass);
             }
             // Handle sub-dialect types like arm.tensor, KHR.CooperativeMatrix, etc.
             while (parser.parser.consumeIf('.')) {
@@ -17186,8 +17147,8 @@ _.ptr.PtrDialect = class extends _.Dialect {
     }
 
     parsePtrType(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             const memorySpace = content.slice(1, -1);
             return new _.ptr.PtrType(memorySpace);
         }
@@ -17322,8 +17283,8 @@ _.EmitCDialect = class extends _.Dialect {
     }
 
     parseLValueType(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!emitc.lvalue${content}`);
         }
         return null;
@@ -19054,32 +19015,32 @@ _.NVGPUDialect = class extends _.Dialect {
     }
 
     parseTensorMapDescriptor(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!nvgpu.tensormap.descriptor${content}`);
         }
         return null;
     }
 
     parseWarpgroupAccumulator(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!nvgpu.warpgroup.accumulator${content}`);
         }
         return null;
     }
 
     parseWarpgroupMatrixDescriptor(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!nvgpu.warpgroup.descriptor${content}`);
         }
         return null;
     }
 
     parseMBarrierGroup(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!nvgpu.mbarrier.barrier${content}`);
         }
         return null;
@@ -19196,8 +19157,8 @@ _.NVWSDialect = class extends _.Dialect {
     }
 
     parseArefTypeShorthand(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!nvws.aref${content}`);
         }
         return parser.parseType();
@@ -19766,12 +19727,10 @@ _.OpenMPDialect = class extends _.Dialect {
                 }
             }
         }
-        if (parser.parser.getToken().isNot(_.Token.l_brace)) {
-            return;
-        }
         const region = {};
-        parser.parseRegion(region);
-        result.regions.push(region);
+        if (parser.parseOptionalRegion(region)) {
+            result.regions.push(region);
+        }
     }
 
     parseIteratorHeader(parser, op) {
@@ -20213,8 +20172,8 @@ _.LLVM.LLVMDialect = class extends _.Dialect {
     }
 
     parseLLVMPointerType(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             const inner = content.startsWith('<') && content.endsWith('>') ? content.slice(1, -1) : content;
             if (/^\d+$/.test(inner)) {
                 return new _.Type(`!llvm.ptr<${inner}>`);
@@ -22909,8 +22868,8 @@ _.SdfgDialect = class extends _.Dialect {
             return true;
         }
         if (result.op === 'sdfg.return') {
-            if (parser.parser.getToken().is(_.Token.percent_identifier)) {
-                const unresolvedOperands = parser.parseOperandList('none');
+            const unresolvedOperands = parser.parseOperandList('none');
+            if (unresolvedOperands.length > 0) {
                 const types = parser.parseOptionalColonTypeList();
                 parser.resolveOperands(unresolvedOperands, types, result.operands);
             }
@@ -23029,9 +22988,8 @@ _.TFLDialect = class extends _.Dialect {
                     result.addTypes([opResult.type]);
                 }
                 result.addTypes([new _.Type('!tfl.control')]);
-            } else if (parser.parser.getToken().is(_.Token.l_brace)) {
-                const region = result.addRegion();
-                parser.parseRegion(region);
+            } else if (parser.parseOptionalRegion(result.addRegion())) {
+                const region = result.regions[result.regions.length - 1];
                 // Result types from yield terminator + control type
                 const block = region.blocks[region.blocks.length - 1];
                 const yieldOp = block.operations[block.operations.length - 1];
@@ -23865,42 +23823,13 @@ _.TestDialect = class extends _.Dialect {
     }
 
     parseDimensionList(parser, op, attrName = 'dimension_list') {
-        const dims = [];
         if (parser.parseOptionalLSquare()) {
             parser.parseOptionalRSquare();
             op.addAttribute(attrName, []);
             return;
         }
-        for (;;) {
-            if (parser.parseOptionalQuestion()) {
-                dims.push(-1);
-            } else {
-                const __dimInt = parser.parseOptionalInteger();
-                if (__dimInt === null) {
-                    break;
-                }
-                dims.push(__dimInt);
-            }
-            const token = parser.parser.getToken();
-            const spelling = token.getSpelling().str();
-            if (token && token.kind === _.Token.bare_identifier && spelling.startsWith('x')) {
-                const rest = spelling.slice(1);
-                if (rest === '') {
-                    parser.parser.consumeToken();
-                } else if (/^\d+$/.test(rest)) {
-                    parser.parser.consumeToken();
-                    dims.push(parseInt(rest, 10));
-                } else if (rest === '?') {
-                    parser.parser.consumeToken();
-                    dims.push(-1);
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        op.addAttribute(attrName, dims);
+        const dimInfo = parser.parseDimensionList(true, false);
+        op.addAttribute(attrName, dimInfo.dimensions);
     }
 
     parseCustomOptionalOperand(parser, result) {
@@ -24173,8 +24102,14 @@ _.triton.TritonDialect = class extends _.Dialect {
             return null;
         }
         // Handle ptr type specifically to properly parse pointee type
-        if (typeName === 'ptr' && parser.parser.getToken().is(_.Token.less)) {
-            return _.triton.PointerType.parse(parser);
+        if (typeName === 'ptr' && parser.parseOptionalLess()) {
+            const pointeeType = parser.parseType();
+            let addressSpace = 1;
+            if (parser.parseOptionalComma()) {
+                addressSpace = parseInt(parser.parseInteger(), 10);
+            }
+            parser.parseGreater();
+            return new _.triton.PointerType(pointeeType, addressSpace);
         }
         let type = `!${dialect}.${typeName}`;
         type += parser.parseOptionalBody(_.Token.less);
@@ -24190,8 +24125,8 @@ _.triton.TritonDialect = class extends _.Dialect {
     }
 
     parseTensorDescType(parser) {
-        if (parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
+        const content = parser.parseOptionalBody(_.Token.less);
+        if (content) {
             return new _.Type(`!tt.tensor_desc${content}`);
         }
         return null;
@@ -25178,17 +25113,14 @@ _.ACCDialect = class extends _.Dialect {
             return;
         }
         const unresolvedOperands = [];
-        do {
+        parser.parseCommaSeparatedList('none', () => {
             unresolvedOperands.push(parser.parseOperand());
-        } while (parser.parseOptionalComma() && parser.parser.getToken().isNot(_.Token.colon));
+        });
         parser.parseColon();
         const types = [];
-        for (let i = 0; i < unresolvedOperands.length; i++) {
-            if (i > 0) {
-                parser.parseComma();
-            }
+        parser.parseCommaSeparatedList('none', () => {
             types.push(parser.parseType());
-        }
+        });
         parser.resolveOperands(unresolvedOperands, types, result.operands);
         parser.parseRParen();
     }
@@ -25198,15 +25130,14 @@ _.ACCDialect = class extends _.Dialect {
     }
 
     parseBindName(parser, result) {
-        while (parser.parser.getToken().isNot(_.Token.r_paren)) {
+        parser.parseCommaSeparatedList('none', () => {
             const attr = parser.parseAttribute();
             if (parser.parseOptionalLSquare()) {
                 parser.parseAttribute();
                 parser.parseRSquare();
             }
             result.addAttribute('bind', attr);
-            parser.parseOptionalComma();
-        }
+        });
     }
 
     parseRoutineGangClause(parser, result) {
@@ -25550,7 +25481,7 @@ _.SdyDialect = class extends _.Dialect {
         } else if (parser.parseOptionalKeyword('mesh')) {
             meshOrRef = this.parseMeshAttr(parser);
         } else {
-            throw new mlir.Error(`Expected '@' or 'mesh', but got '${parser.parser.getToken().getSpelling().str()}' ${parser.getCurrentLocation()}`);
+            throw new mlir.Error(`Expected '@' or 'mesh' ${parser.getCurrentLocation()}`);
         }
         parser.parseComma();
         const dimShardings = this.parseDimensionShardings(parser);
@@ -25623,12 +25554,9 @@ _.SdyDialect = class extends _.Dialect {
             }
         }
         let priority = null;
-        if (parser.parser.getToken().is(_.Token.bare_identifier)) {
-            const tokenValue = parser.parser.getTokenSpelling().str();
-            if (typeof tokenValue === 'string' && tokenValue.startsWith('p') && /^p\d+$/.test(tokenValue)) {
-                parser.parseKeyword();
-                priority = parseInt(tokenValue.substring(1), 10);
-            }
+        const priorityStr = parser.parseOptionalKeyword();
+        if (priorityStr && /^p\d+$/.test(priorityStr)) {
+            priority = parseInt(priorityStr.substring(1), 10);
         }
         return { axes, isClosed, priority };
     }
@@ -26121,9 +26049,8 @@ _.PolyDialect = class extends _.Dialect {
         }
         let type = `!${dialect}.${typeName}`;
         // poly.poly<N> type has a degree bound parameter
-        if (typeName === 'poly' && parser.parser.getToken().is(_.Token.less)) {
-            const content = parser.parseBody(_.Token.less);
-            type += content;
+        if (typeName === 'poly') {
+            type += parser.parseOptionalBody(_.Token.less);
         }
         return new _.Type(type);
     }
