@@ -15296,26 +15296,6 @@ _.LinalgDialect = class extends _.Dialect {
 
     constructor(operations) {
         super(operations, 'linalg');
-        this._namedStructuredOps = new Set([
-            'linalg.matmul', 'linalg.batch_matmul', 'linalg.batch_reduce_matmul',
-            'linalg.matvec', 'linalg.vecmat', 'linalg.dot', 'linalg.batch_matvec',
-            'linalg.conv_1d', 'linalg.conv_1d_ncw_fcw', 'linalg.conv_1d_nwc_wcf',
-            'linalg.conv_2d', 'linalg.conv_2d_nchw_fchw', 'linalg.conv_2d_nchw_fchw_q',
-            'linalg.conv_2d_ngchw_fgchw', 'linalg.conv_2d_ngchw_gfchw', 'linalg.conv_2d_ngchw_gfchw_q',
-            'linalg.conv_2d_nhwc_fhwc', 'linalg.conv_2d_nhwc_fhwc_q',
-            'linalg.conv_2d_nhwc_hwcf', 'linalg.conv_2d_nhwc_hwcf_q',
-            'linalg.conv_2d_nhwgc_gfhwc', 'linalg.conv_2d_nhwgc_gfhwc_q',
-            'linalg.conv_3d', 'linalg.conv_3d_ncdhw_fcdhw', 'linalg.conv_3d_ndhwc_dhwcf', 'linalg.conv_3d_ndhwc_dhwcf_q',
-            'linalg.depthwise_conv_1d_ncw_cw', 'linalg.depthwise_conv_1d_nwc_wc', 'linalg.depthwise_conv_1d_nwc_wcm',
-            'linalg.depthwise_conv_2d_nchw_chw', 'linalg.depthwise_conv_2d_nhwc_hwc', 'linalg.depthwise_conv_2d_nhwc_hwc_q',
-            'linalg.depthwise_conv_2d_nhwc_hwcm', 'linalg.depthwise_conv_2d_nhwc_hwcm_q',
-            'linalg.depthwise_conv_3d_ncdhw_cdhw', 'linalg.depthwise_conv_3d_ndhwc_dhwc', 'linalg.depthwise_conv_3d_ndhwc_dhwcm',
-            'linalg.pooling_nchw_max', 'linalg.pooling_nchw_sum',
-            'linalg.pooling_nhwc_max', 'linalg.pooling_nhwc_max_unsigned', 'linalg.pooling_nhwc_min', 'linalg.pooling_nhwc_min_unsigned', 'linalg.pooling_nhwc_sum',
-            'linalg.pooling_ncw_max', 'linalg.pooling_ncw_sum',
-            'linalg.pooling_nwc_max', 'linalg.pooling_nwc_max_unsigned', 'linalg.pooling_nwc_min', 'linalg.pooling_nwc_min_unsigned', 'linalg.pooling_nwc_sum',
-            'linalg.pooling_ndhwc_max', 'linalg.pooling_ndhwc_min', 'linalg.pooling_ndhwc_sum'
-        ]);
     }
 
     parseOperation(parser, result) {
@@ -15446,7 +15426,27 @@ _.LinalgDialect = class extends _.Dialect {
             result.addAttribute('indexing_maps', indexingMapsAttr);
             return this.parseNamedStructuredOp(parser, result);
         }
-        if (this._namedStructuredOps.has(op)) {
+        if (op === 'linalg.abs' || op === 'linalg.add' ||
+            op === 'linalg.batch_matmul' || op === 'linalg.batch_matvec' || op === 'linalg.batch_mmt4d' || op === 'linalg.batch_reduce_matmul' || op === 'linalg.batch_vecmat' ||
+            op === 'linalg.ceil' || op === 'linalg.copy' ||
+            op === 'linalg.conv_1d' || op === 'linalg.conv_1d_ncw_fcw' || op === 'linalg.conv_1d_nwc_wcf' ||
+            op === 'linalg.conv_2d' || op === 'linalg.conv_2d_nchw_fchw' || op === 'linalg.conv_2d_nchw_fchw_q' || op === 'linalg.conv_2d_ngchw_fgchw' || op === 'linalg.conv_2d_ngchw_gfchw' || op === 'linalg.conv_2d_ngchw_gfchw_q' || op === 'linalg.conv_2d_nhwc_fhwc' || op === 'linalg.conv_2d_nhwc_fhwc_q' || op === 'linalg.conv_2d_nhwc_hwcf' || op === 'linalg.conv_2d_nhwc_hwcf_q' || op === 'linalg.conv_2d_nhwgc_gfhwc' || op === 'linalg.conv_2d_nhwgc_gfhwc_q' ||
+            op === 'linalg.conv_3d' || op === 'linalg.conv_3d_ncdhw_fcdhw' || op === 'linalg.conv_3d_ndhwc_dhwcf' || op === 'linalg.conv_3d_ndhwc_dhwcf_q' ||
+            op === 'linalg.depthwise_conv_1d_ncw_cw' || op === 'linalg.depthwise_conv_1d_nwc_wc' || op === 'linalg.depthwise_conv_1d_nwc_wcm' ||
+            op === 'linalg.depthwise_conv_2d_nchw_chw' || op === 'linalg.depthwise_conv_2d_nhwc_hwc' || op === 'linalg.depthwise_conv_2d_nhwc_hwc_q' || op === 'linalg.depthwise_conv_2d_nhwc_hwcm' || op === 'linalg.depthwise_conv_2d_nhwc_hwcm_q' ||
+            op === 'linalg.depthwise_conv_3d_ncdhw_cdhw' || op === 'linalg.depthwise_conv_3d_ndhwc_dhwc' || op === 'linalg.depthwise_conv_3d_ndhwc_dhwcm' ||
+            op === 'linalg.div' || op === 'linalg.div_unsigned' || op === 'linalg.dot' ||
+            op === 'linalg.erf' || op === 'linalg.exp' ||
+            op === 'linalg.fill_rng_2d' || op === 'linalg.floor' ||
+            op === 'linalg.log' ||
+            op === 'linalg.matmul' || op === 'linalg.matmul_transpose_a' || op === 'linalg.matmul_transpose_b' || op === 'linalg.matvec' || op === 'linalg.max' || op === 'linalg.min' || op === 'linalg.mmt4d' || op === 'linalg.mul' ||
+            op === 'linalg.negf' ||
+            op === 'linalg.pooling_nchw_max' || op === 'linalg.pooling_nchw_sum' || op === 'linalg.pooling_ncw_max' || op === 'linalg.pooling_ncw_sum' || op === 'linalg.pooling_ndhwc_max' || op === 'linalg.pooling_ndhwc_min' || op === 'linalg.pooling_ndhwc_sum' || op === 'linalg.pooling_nhwc_max' || op === 'linalg.pooling_nhwc_max_unsigned' || op === 'linalg.pooling_nhwc_min' || op === 'linalg.pooling_nhwc_min_unsigned' || op === 'linalg.pooling_nhwc_sum' || op === 'linalg.pooling_nwc_max' || op === 'linalg.pooling_nwc_max_unsigned' || op === 'linalg.pooling_nwc_min' || op === 'linalg.pooling_nwc_min_unsigned' || op === 'linalg.pooling_nwc_sum' || op === 'linalg.powf' ||
+            op === 'linalg.quantized_batch_matmul' || op === 'linalg.quantized_matmul' ||
+            op === 'linalg.reciprocal' || op === 'linalg.round' || op === 'linalg.rsqrt' ||
+            op === 'linalg.select' || op === 'linalg.sqrt' || op === 'linalg.square' || op === 'linalg.sub' ||
+            op === 'linalg.tanh' ||
+            op === 'linalg.vecmat') {
             const indexingMapsAttr = this.parseIndexingMapsAttr(parser);
             if (indexingMapsAttr) {
                 result.addAttribute('indexing_maps', indexingMapsAttr);
@@ -19222,70 +19222,28 @@ _.SCFDialect = class extends _.Dialect {
     }
 
     parseWhileOp(parser, result) {
-        const unresolvedOperands = [];
-        if (parser.parseOptionalLParen()) {
-            while (!parser.parseOptionalRParen()) {
-                parser.parseOptionalOperand(); // Skip variable name
-                if (parser.parseOptionalEqual()) {
-                    const operand = parser.parseOptionalOperand();
-                    if (operand) {
-                        unresolvedOperands.push(operand);
-                    }
-                    // Note: attribute values are not operands, skip them
-                }
-                parser.parseOptionalComma();
-            }
+        const regionArgs = [];
+        const operands = [];
+        parser.parseOptionalAssignmentList(regionArgs, operands);
+        parser.parseColon();
+        const functionType = parser.parseType();
+        result.addTypes(functionType.results);
+        parser.resolveOperands(operands, functionType.inputs, result.operands);
+        for (let i = 0; i < regionArgs.length; i++) {
+            regionArgs[i].type = functionType.inputs[i];
         }
-        if (parser.parseOptionalColon()) {
-            const types = [];
-            if (parser.parseOptionalLParen()) {
-                while (!parser.parseOptionalRParen()) {
-                    types.push(parser.parseType());
-                    parser.parseOptionalComma();
-                }
-            } else {
-                types.push(parser.parseType());
-            }
-            parser.resolveOperands(unresolvedOperands, types, result.operands);
-            result.addTypes(parser.parseOptionalArrowTypeList());
-        }
-        {
-            const region = result.addRegion();
-            parser.parseRegion(region);
-        }
-        if (parser.parseOptionalKeyword('do')) {
-            const region = result.addRegion();
-            parser.parseRegion(region);
-        }
+        const before = result.addRegion();
+        parser.parseRegion(before, regionArgs);
+        parser.parseKeyword('do');
+        const after = result.addRegion();
+        parser.parseRegion(after);
         parser.parseOptionalAttrDictWithKeyword(result.attributes);
         return true;
     }
 
     parseForallOp(parser, result) {
         const indexType = new _.IndexType();
-        const inductionVars = [];
-        if (!parser.parseOptionalLParen()) {
-            return false;
-        }
-        while (!parser.parseOptionalRParen()) {
-            const inductionVar = parser.parseOptionalOperand();
-            if (inductionVar) {
-                inductionVars.push(inductionVar.name);
-            } else {
-                return false;
-            }
-            if (!parser.parseOptionalComma()) {
-                if (!parser.parseOptionalRParen()) {
-                    return false;
-                }
-                break;
-            }
-        }
-        const isNormalized = parser.parseOptionalKeyword('in');
-        if (!isNormalized && !parser.parseOptionalEqual()) {
-            return false;
-        }
-        // Helper to parse bounds list - only SSA values become operands, integers are static
+        const ivs = parser.parseArgumentList('paren');
         const parseBoundsList = () => {
             const bounds = [];
             if (!parser.parseOptionalLParen()) {
@@ -19296,181 +19254,73 @@ _.SCFDialect = class extends _.Dialect {
                 if (operand) {
                     bounds.push(operand);
                 } else {
-                    const intVal = parser.parseOptionalInteger();
-                    if (intVal !== null) {
-                        // Skip static bound
-                    }
+                    parser.parseOptionalInteger();
                 }
                 parser.parseOptionalComma();
             }
             return bounds;
         };
-        if (isNormalized) {
-            // Normalized form: in (bounds)
+        if (parser.parseOptionalKeyword('in')) {
             const bounds = parseBoundsList();
             parser.resolveOperands(bounds, bounds.map(() => indexType), result.operands);
         } else {
-            // Range form: = (lb) to (ub) step (step)
+            parser.parseEqual();
             const lowerBounds = parseBoundsList();
             parser.resolveOperands(lowerBounds, lowerBounds.map(() => indexType), result.operands);
-            if (!parser.parseOptionalKeyword('to')) {
-                return false;
-            }
+            parser.parseKeyword('to');
             const upperBounds = parseBoundsList();
             parser.resolveOperands(upperBounds, upperBounds.map(() => indexType), result.operands);
-            if (!parser.parseOptionalKeyword('step')) {
-                return false;
-            }
+            parser.parseKeyword('step');
             const steps = parseBoundsList();
             parser.resolveOperands(steps, steps.map(() => indexType), result.operands);
         }
+        const regionOutArgs = [];
+        const outOperands = [];
         if (parser.parseOptionalKeyword('shared_outs')) {
-            if (!parser.parseOptionalLParen()) {
-                return false;
-            }
-            while (!parser.parseOptionalRParen()) {
-                parser.parseOptionalOperand(); // Skip arg name
-                if (parser.parseOptionalEqual()) {
-                    const operand = parser.parseOptionalOperand();
-                    if (operand) {
-                        parser.resolveOperand(operand, null, result.operands);
-                    } else {
-                        parser.parseAttribute(); // Skip attribute value
-                    }
-                }
-                parser.parseOptionalComma();
-            }
+            parser.parseAssignmentList(regionOutArgs, outOperands);
+            result.addTypes(parser.parseOptionalArrowTypeList());
+            parser.resolveOperands(outOperands, result.types, result.operands);
         }
-        if (parser.parseOptionalArrow()) {
-            if (parser.parseOptionalLParen()) {
-                while (!parser.parseOptionalRParen()) {
-                    const type = parser.parseType();
-                    result.addTypes([type]);
-                    parser.parseOptionalComma();
-                }
-            } else {
-                const type = parser.parseType();
-                result.addTypes([type]);
-            }
+        const regionArgs = [];
+        for (const iv of ivs) {
+            iv.type = indexType;
+            regionArgs.push(iv);
+        }
+        for (let i = 0; i < regionOutArgs.length; i++) {
+            regionOutArgs[i].type = result.types[i];
+            regionArgs.push(regionOutArgs[i]);
         }
         const region = result.addRegion();
-        parser.parseRegion(region);
+        parser.parseRegion(region, regionArgs);
         parser.parseOptionalAttrDict(result.attributes);
         return true;
     }
 
     parseParallelOp(parser, result) {
         const indexType = new _.IndexType();
-        const inductionVars = [];
-        if (!parser.parseOptionalLParen()) {
-            return false;
-        }
-        while (!parser.parseOptionalRParen()) {
-            const inductionVar = parser.parseOptionalOperand();
-            if (inductionVar) {
-                inductionVars.push(inductionVar.name);
-            } else {
-                return false;
-            }
-            parser.parseOptionalComma();
-        }
-        if (!parser.parseOptionalEqual()) {
-            return false;
-        }
-        const lowerBounds = [];
-        if (!parser.parseOptionalLParen()) {
-            return false;
-        }
-        while (!parser.parseOptionalRParen()) {
-            const lb = parser.parseOptionalOperand();
-            if (lb) {
-                lowerBounds.push(lb);
-            } else {
-                return false;
-            }
-            parser.parseOptionalComma();
-        }
-        parser.resolveOperands(lowerBounds, lowerBounds.map(() => indexType), result.operands);
-        if (!parser.parseOptionalKeyword('to')) {
-            return false;
-        }
-        const upperBounds = [];
-        if (!parser.parseOptionalLParen()) {
-            return false;
-        }
-        while (!parser.parseOptionalRParen()) {
-            const ub = parser.parseOptionalOperand();
-            if (ub) {
-                upperBounds.push(ub);
-            } else {
-                return false;
-            }
-            parser.parseOptionalComma();
-        }
-        parser.resolveOperands(upperBounds, upperBounds.map(() => indexType), result.operands);
-        if (!parser.parseOptionalKeyword('step')) {
-            return false;
-        }
-        const steps = [];
-        if (!parser.parseOptionalLParen()) {
-            return false;
-        }
-        while (!parser.parseOptionalRParen()) {
-            const step = parser.parseOptionalOperand();
-            if (step) {
-                steps.push(step);
-            } else {
-                return false;
-            }
-            parser.parseOptionalComma();
-        }
+        const ivs = parser.parseArgumentList('paren');
+        parser.parseEqual();
+        const lower = parser.parseOperandList('paren');
+        parser.resolveOperands(lower, lower.map(() => indexType), result.operands);
+        parser.parseKeyword('to');
+        const upper = parser.parseOperandList('paren');
+        parser.resolveOperands(upper, upper.map(() => indexType), result.operands);
+        parser.parseKeyword('step');
+        const steps = parser.parseOperandList('paren');
         parser.resolveOperands(steps, steps.map(() => indexType), result.operands);
+        const initVals = [];
         if (parser.parseOptionalKeyword('init')) {
-            const initVals = [];
-            if (!parser.parseOptionalLParen()) {
-                return false;
-            }
-            while (!parser.parseOptionalRParen()) {
-                const initOp = parser.parseOptionalOperand();
-                if (initOp) {
-                    initVals.push(initOp);
-                } else {
-                    const value = parser.parseAttribute();
-                    if (value) {
-                        initVals.push(value);
-                    }
-                }
-                parser.parseOptionalComma();
-            }
-            // Init values type inferred from definition
-            parser.resolveOperands(initVals, initVals.map(() => null), result.operands);
+            initVals.push(...parser.parseOperandList('paren'));
         }
-        if (parser.parseOptionalArrow()) {
-            if (parser.parseOptionalLParen()) {
-                while (!parser.parseOptionalRParen()) {
-                    const type = parser.parseType();
-                    result.addTypes([type]);
-                    parser.parseOptionalComma();
-                }
-            } else {
-                const type = parser.parseType();
-                result.addTypes([type]);
-            }
+        result.addTypes(parser.parseOptionalArrowTypeList());
+        for (const iv of ivs) {
+            iv.type = indexType;
         }
-        {
-            const region = {};
-            parser.parseRegion(region);
-            if (region.blocks && region.blocks.length > 0 && inductionVars.length > 0) {
-                if (!region.blocks[0].arguments) {
-                    region.blocks[0].arguments = [];
-                }
-                for (const iv of inductionVars) {
-                    region.blocks[0].arguments.push({ value: iv });
-                }
-            }
-            result.regions.push(region);
-        }
+        const region = result.addRegion();
+        parser.parseRegion(region, ivs);
+        result.addAttribute('operandSegmentSizes', new _.DenseI32ArrayAttr([lower.length, upper.length, steps.length, initVals.length]));
         parser.parseOptionalAttrDict(result.attributes);
+        parser.resolveOperands(initVals, result.types, result.operands);
         return true;
     }
 
