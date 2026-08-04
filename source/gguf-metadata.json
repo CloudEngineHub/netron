@@ -3231,14 +3231,19 @@
           "type": "MUL_MAT_ID",
           "tensors": ["ffn_down.{N}", "ffn_down_exps"]
         },
-        { "name": "attention", "type": "MULTI_HEAD_ATTENTION", "category": "Attention", "tensors": ["attn_q", "attn_k", "attn_v", "attn_output", "attn_qkv"] },
+        { "name": "attention", "type": "MULTI_HEAD_ATTENTION", "category": "Attention", "tensors": ["attn_q", "attn_k", "attn_v", "attn_output"] },
         { "name": "attn_post_norm", "type": "RMS_NORM", "category": "Normalization", "tensors": ["post_attention_norm"] },
-        { "name": "attn_gate", "type": "MUL_MAT" },
         { "name": "ffn_up_shexp", "type": "MUL_MAT" },
         { "name": "ffn_down_shexp", "type": "MUL_MAT" },
         { "name": "ffn_gate_shexp", "type": "MUL_MAT" },
         { "name": "ffn_gate_up_exps", "type": "MUL_MAT_ID" },
-        { "name": "ssm", "type": "MAMBA2", "tensors": ["ssm_a", "ssm_conv1d", "ssm_dt", "ssm_norm", "ssm_in", "ssm_ba", "ssm_out"] }
+        { "name": "ssm", "type": "MAMBA2", "tensors": ["ssm_a", "ssm_conv1d", "ssm_dt", "ssm_norm", "ssm_in", "ssm_ba", "ssm_out", "attn_qkv", "attn_gate"] },
+        { "name": "nextn.eh_proj", "type": "MUL_MAT" },
+        { "name": "nextn.embed_tokens", "type": "EMBEDDING", "category": "Transform" },
+        { "name": "nextn.enorm", "type": "RMS_NORM", "category": "Normalization" },
+        { "name": "nextn.hnorm", "type": "RMS_NORM", "category": "Normalization" },
+        { "name": "nextn.shared_head_head", "type": "MUL_MAT" },
+        { "name": "nextn.shared_head_norm", "type": "RMS_NORM", "category": "Normalization" }
       ],
       "output": [
         { "name": "output_norm", "type": "RMS_NORM", "category": "Normalization" },
