@@ -26201,6 +26201,20 @@
         ]
       }
     ],
+    "examples": [
+      {
+        "summary": "globallppool_1d_p3",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=3,\n)\nx = np.array([[[-1.0, 2.0], [-3.0, 4.0]]], dtype=np.float32)\ny = np.array([[[2.080084], [4.4979415]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_1d_p3\")"
+      },
+      {
+        "summary": "globallppool_3d",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=1,\n)\nx = np.array(\n    [[[[[-1.0, 2.0]], [[-3.0, 4.0]]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[[10.0]]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_3d\")"
+      },
+      {
+        "summary": "globallppool_default",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n)\nx = np.array(\n    [[[[1.0, -2.0], [3.0, -4.0]], [[5.0, -6.0], [7.0, -8.0]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[5.477226]], [[13.190906]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_default\")"
+      }
+    ],
     "category": "Pool"
   },
   {
@@ -26244,6 +26258,20 @@
           "tensor(float)",
           "tensor(double)"
         ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "globallppool_1d_p3",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=3,\n)\nx = np.array([[[-1.0, 2.0], [-3.0, 4.0]]], dtype=np.float32)\ny = np.array([[[2.080084], [4.4979415]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_1d_p3\")"
+      },
+      {
+        "summary": "globallppool_3d",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=1,\n)\nx = np.array(\n    [[[[[-1.0, 2.0]], [[-3.0, 4.0]]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[[10.0]]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_3d\")"
+      },
+      {
+        "summary": "globallppool_default",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n)\nx = np.array(\n    [[[[1.0, -2.0], [3.0, -4.0]], [[5.0, -6.0], [7.0, -8.0]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[5.477226]], [[13.190906]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_default\")"
       }
     ],
     "category": "Pool"
@@ -26290,6 +26318,20 @@
           "tensor(float)",
           "tensor(double)"
         ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "globallppool_1d_p3",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=3,\n)\nx = np.array([[[-1.0, 2.0], [-3.0, 4.0]]], dtype=np.float32)\ny = np.array([[[2.080084], [4.4979415]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_1d_p3\")"
+      },
+      {
+        "summary": "globallppool_3d",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    p=1,\n)\nx = np.array(\n    [[[[[-1.0, 2.0]], [[-3.0, 4.0]]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[[10.0]]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_3d\")"
+      },
+      {
+        "summary": "globallppool_default",
+        "code": "node = onnx.helper.make_node(\n    \"GlobalLpPool\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n)\nx = np.array(\n    [[[[1.0, -2.0], [3.0, -4.0]], [[5.0, -6.0], [7.0, -8.0]]]],\n    dtype=np.float32,\n)\ny = np.array([[[[5.477226]], [[13.190906]]]], dtype=np.float32)\nexpect(node, inputs=[x], outputs=[y], name=\"test_globallppool_default\")"
       }
     ],
     "category": "Pool"
