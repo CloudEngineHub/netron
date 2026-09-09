@@ -133,7 +133,8 @@ gguf.Graph = class {
                 };
                 const hasMoe = has('ffn_gate_inp');
                 const hasFusedExps = has('ffn_gate_up_exps') && has('ffn_down_exps');
-                const hasFfn = has('ffn_up') || hasMoe;
+                const hasFusedFfn = has('ffn_gate_up') && has('ffn_down');
+                const hasFfn = has('ffn_up') || hasFusedFfn || hasMoe;
                 const buildLinearFfn = (input, gateKey, upKey, downKey, route = null) => {
                     if (!has(downKey)) {
                         return input;
@@ -153,11 +154,11 @@ gguf.Graph = class {
                     addNode(use(downKey), route ? [...inputs, route] : inputs, d);
                     return d;
                 };
-                const buildFusedExpsFfn = (input, route = null) => {
+                const buildFusedFfn = (input, gateUpKey, downKey, route = null) => {
                     const gu = newValue();
-                    addNode(use('ffn_gate_up_exps'), route ? [input, route] : [input], gu);
+                    addNode(use(gateUpKey), route ? [input, route] : [input], gu);
                     const d = newValue();
-                    addNode(use('ffn_down_exps'), route ? [gu, route] : [gu], d);
+                    addNode(use(downKey), route ? [gu, route] : [gu], d);
                     return d;
                 };
                 const applyComponent = (groupName, value) => {
@@ -191,7 +192,7 @@ gguf.Graph = class {
                         }
                         const hasLatent = has('ffn_latent_down') || has('ffn_latent_up');
                         let moeOut = hasFusedExps ?
-                            buildFusedExpsFfn(hasLatent ? expertInput : g1, hasLatent ? g1 : null) :
+                            buildFusedFfn(hasLatent ? expertInput : g1, 'ffn_gate_up_exps', 'ffn_down_exps', hasLatent ? g1 : null) :
                             buildLinearFfn(hasLatent ? expertInput : g1, 'ffn_gate_exps', 'ffn_up_exps', 'ffn_down_exps', hasLatent ? g1 : null);
                         moeOut = applyComponent('ffn_latent_norm', moeOut);
                         if (has('ffn_latent_up')) {
@@ -215,7 +216,9 @@ gguf.Graph = class {
                         }
                         return moeOut;
                     }
-                    return buildLinearFfn(input, 'ffn_gate', 'ffn_up', 'ffn_down');
+                    return hasFusedFfn ?
+                        buildFusedFfn(input, 'ffn_gate_up', 'ffn_down') :
+                        buildLinearFfn(input, 'ffn_gate', 'ffn_up', 'ffn_down');
                 };
                 const applyLayerOutScale = (value) => {
                     if (!has('layer_out_scale')) {
@@ -1022,7 +1025,15 @@ gguf.Context = class {
         if (schema && schema.graph) {
             const registerSection = (section, classify, sectionPrefix) => {
                 if (section) {
+                    const attention = section.find((block) => block.name === 'attention' &&
+                        ['attn_q', 'attn_k', 'attn_v'].every((name) => block.tensors?.includes(name)));
                     for (const block of section) {
+                        // Fused Q/K/V is an alternative to the existing three
+                        // projections; retain explicit mappings such as SSM.
+                        if (classify && block.name === 'attn_qkv' && !block.type && attention) {
+                            this._classifierRules.push({ pattern: `${sectionPrefix}attn_qkv`, group: attention.name });
+                            continue;
+                        }
                         this._blockTypes.set(block.name, block);
                         if (block.tensors) {
                             for (const tensor of block.tensors) {
@@ -1055,6 +1066,13 @@ gguf.Context = class {
                 registerSection(schema.graph.decoder.blocks, true, 'dec.');
                 registerSection(schema.graph.decoder.output, false, 'dec.');
             }
+            // A fused gate/up projection has the same display type as the
+            // separate dense projections; preserve any explicit mapping.
+            if (!this._blockTypes.has('ffn_gate_up') &&
+                ['ffn_gate', 'ffn_up'].every((name) => this._blockTypes.get(name)?.type === 'MUL_MAT')) {
+                this._blockTypes.set('ffn_gate_up', this._blockTypes.get('ffn_up'));
+                this._classifierRules.push({ pattern: 'ffn_gate_up', group: 'ffn_gate_up' });
+            }
             // Longest-pattern-first ensures specific aliases (e.g. ffn_gate.{N},
             // attn_q_norm) win over their shorter prefixes (ffn_gate, attn_q).
             this._classifierRules.sort((a, b) => b.pattern.length - a.pattern.length);
@@ -1086,7 +1104,7 @@ gguf.Context = class {
         // Per-node attributes are resolved from the entry's `attributes` list
         // by looking up `<arch>.<key>` in the model KV (e.g. an `attention`
         // entry listing `attention.head_count` pulls that KV onto every node).
-        const resolveBlock = (group) => {
+        const resolveBlock = (group, index = null) => {
             let block = this._blockTypes.get(group);
             if (!block && (group.startsWith('enc.') || group.startsWith('dec.'))) {
                 // T5 enc/dec output sections register block names bare
@@ -1107,7 +1125,17 @@ gguf.Context = class {
                 const label = entry.name;
                 const key = `${this._architecture}.${entry.key}`;
                 if (this._metadata.has(key)) {
-                    metadata.set(label, this._metadata.get(key));
+                    let value = this._metadata.get(key);
+                    if (this._architecture === 'spark2_5' && group === 'attention' && index !== null) {
+                        const sliding = this._metadata.get('spark2_5.attention.sliding_window_pattern')?.value[index];
+                        if (entry.key === 'attention.sliding_window' && !sliding) {
+                            continue;
+                        }
+                        if (Array.isArray(value.value)) {
+                            value = { ...value, value: value.value[index], type: value.type.replace(/\[\]$/, '') };
+                        }
+                    }
+                    metadata.set(label, value);
                 }
             }
             return { type: block.type || 'weights', category: block.category, metadata, residual: block.residual };
@@ -1119,7 +1147,7 @@ gguf.Context = class {
         // Build a structured block at `blockPrefix`, returning sub-layers in
         // discovery order. Tensors in the block are grouped by component
         // (attn, ffn, ...) via _classifyTensor.
-        const buildBlockLayers = (blockPrefix) => {
+        const buildBlockLayers = (blockPrefix, index) => {
             // For T5-style encoder/decoder blocks (`enc.blk.N` / `dec.blk.N`),
             // metadata aliases preserve the `enc.`/`dec.` segment (e.g.
             // `enc.attn_q`) to disambiguate the two subgraphs. Prepend it back
@@ -1160,7 +1188,7 @@ gguf.Context = class {
                     claimed.add(fullName);
                 }
                 if (weights.size > 0) {
-                    const resolved = resolveBlock(group);
+                    const resolved = resolveBlock(group, index);
                     blockLayers.push({ name: group, type: resolved.type, category: resolved.category, weights, metadata: resolved.metadata, residual: resolved.residual, layers: [] });
                 }
             }
@@ -1243,6 +1271,9 @@ gguf.Context = class {
                         weights.set(weightName, tensor);
                     }
                 }
+                if (this._architecture === 'spark2_5' && !prefix && name === 'output' && weights.size === 0 && tensors.has('token_embd.weight')) {
+                    weights.set('weight', tensors.get('token_embd.weight'));
+                }
                 if (weights.size > 0) {
                     pushFlat(key, weights);
                 }
@@ -1251,7 +1282,7 @@ gguf.Context = class {
         const sectionBlocks = (prefix, blockType, indices) => {
             for (const i of indices) {
                 const blockPrefix = fullPrefix(prefix, `blk.${i}`);
-                const blockLayers = buildBlockLayers(blockPrefix);
+                const blockLayers = buildBlockLayers(blockPrefix, i);
                 if (blockLayers.length > 0) {
                     layers.push({ name: blockPrefix, type: blockType, layers: blockLayers, metadata: new Map(), weights: new Map() });
                 }
