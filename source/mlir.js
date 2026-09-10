@@ -9458,9 +9458,9 @@ _.Dialect = class {
                             if (sourceTypes.length > 0) {
                                 for (const sourceType of sourceTypes) {
                                     let resultType = sourceType;
-                                    if (transformer === '::getI1SameShape($_self)') {
+                                    if (transformer === '::getI1SameShape($_self)' || transformer === '::mlir::LLVM::getI1SameShape($_self)') {
                                         if (sourceType instanceof _.VectorType) {
-                                            resultType = new _.VectorType(sourceType.dimensions, new _.IntegerType('i1'), sourceType.scalableDims);
+                                            resultType = new _.VectorType(sourceType.shape, new _.IntegerType('i1'), sourceType.scalableDims);
                                         } else if (sourceType instanceof _.RankedTensorType) {
                                             resultType = new _.RankedTensorType(sourceType.shape, new _.IntegerType('i1'));
                                         } else {
@@ -25333,6 +25333,7 @@ _.TransformDialect = class extends _.Dialect {
         this.registerCustomDirective('ContinuousTileSizeTypes', this.parseContinuousTileSizeTypes.bind(this));
         this.registerCustomDirective('MultitileSizesTypes', this.parseMultitileSizesTypes.bind(this));
         this.registerCustomDirective('InnerTileAlignmentArray', this.parseInnerTileAlignmentArray.bind(this));
+        this.registerCustomDirective('LLVMTypeConverterOptions', this.parseLLVMTypeConverterOptions.bind(this));
     }
 
     parseOperation(parser, result) {
@@ -25374,6 +25375,35 @@ _.TransformDialect = class extends _.Dialect {
             return true;
         }
         return super.parseOperation(parser, result);
+    }
+
+    parseLLVMTypeConverterOptions(parser, op, useAlignedAlloc, indexBitwidth, useGenericFunctions, useBarePtrCallConv, dataLayout) {
+        const options = new Map([
+            ['use_aligned_alloc', [useAlignedAlloc, 'i1', _.BoolAttr]],
+            ['index_bitwidth', [indexBitwidth, 'i64', _.IntegerAttr]],
+            ['use_generic_functions', [useGenericFunctions, 'i1', _.BoolAttr]],
+            ['use_bare_ptr_call_conv', [useBarePtrCallConv, 'i1', _.BoolAttr]],
+            ['data_layout', [dataLayout, null, _.StringAttr]]
+        ]);
+        const keywords = Array.from(options.keys());
+        const seen = new Set();
+        for (let keyword = parser.parseOptionalKeyword(keywords); keyword; keyword = parser.parseOptionalKeyword(keywords)) {
+            if (seen.has(keyword)) {
+                parser.emitError(`duplicate '${keyword}' option`);
+            }
+            seen.add(keyword);
+            parser.parseEqual();
+            const [name, type, attributeType] = options.get(keyword);
+            let attr = parser.parseAttribute(type ? new _.IntegerType(type) : null);
+            // MLIR's BoolAttr is an i1 IntegerAttr; Netron represents it separately.
+            if (attributeType === _.BoolAttr && attr instanceof _.IntegerAttr && attr.type.toString() === 'i1') {
+                attr = new _.BoolAttr(attr.value !== 0);
+            }
+            if (!(attr instanceof attributeType) && !(attributeType === _.IntegerAttr && attr instanceof _.BoolAttr)) {
+                parser.emitError('invalid kind of attribute specified');
+            }
+            op.addAttribute(name, attr);
+        }
     }
 
     parseSequenceOpOperands(parser, op /*, args */) {
@@ -27344,6 +27374,15 @@ _.ACCDialect = class extends _.Dialect {
         this.registerCustomDirective('DeviceTypeArrayAttr', this.parseDeviceTypeArrayAttr.bind(this));
         this.registerCustomDirective('ArrayAttr', this.parseArrayAttr.bind(this));
         this.registerCustomDirective('DenseBoolArrayAttr', this.parseDenseBoolArrayAttr.bind(this));
+        this.registerCustomDirective('SourceLocation', this.parseSourceLocation.bind(this));
+    }
+
+    parseSourceLocation(parser, op, name) {
+        const attr = parser.parseAttribute();
+        if (attr instanceof _.LocationAttr === false) {
+            parser.emitError('expected location attribute');
+        }
+        op.addAttribute(name, attr);
     }
 
     parseArrayAttr(parser, op, name) {

@@ -36159,6 +36159,10 @@
         "code": "node = onnx.helper.make_node(\n    \"LpNormalization\", inputs=[\"x\"], outputs=[\"y\"], axis=-1, p=1\n)\nx = np.array(\n    [[[1.0, 2.0, 2.0], [3.0, 4.0, 0.0]], [[0.0, 5.0, 5.0], [6.0, 8.0, 0.0]]],\n    dtype=np.float32,\n)\nl1_norm_axis_last = np.sum(abs(x), axis=-1, keepdims=True)\ny = x / l1_norm_axis_last\nexpect(node, inputs=[x], outputs=[y], name=\"test_l1normalization_axis_last\")"
       },
       {
+        "summary": "l1normalization_negative_values",
+        "code": "node = onnx.helper.make_node(\n    \"LpNormalization\", inputs=[\"x\"], outputs=[\"y\"], axis=0, p=1\n)\nx = np.array([1.0, -1.0], dtype=np.float32)\nl1_norm = np.sum(abs(x), axis=0, keepdims=True)\ny = x / l1_norm\nexpect(\n    node,\n    inputs=[x],\n    outputs=[y],\n    name=\"test_l1normalization_negative_values\",\n)"
+      },
+      {
         "summary": "l2normalization_axis_0",
         "code": "node = onnx.helper.make_node(\n    \"LpNormalization\", inputs=[\"x\"], outputs=[\"y\"], axis=0, p=2\n)\nx = np.array(\n    [[[1.0, 2.0, 2.0], [3.0, 4.0, 0.0]], [[0.0, 5.0, 5.0], [6.0, 8.0, 0.0]]],\n    dtype=np.float32,\n)\nl2_norm_axis_0 = np.sqrt(np.sum(x**2, axis=0, keepdims=True))\n# When norm is 0, output is 0 (0/0 = 0)\ny = np.where(l2_norm_axis_0 == 0, 0, x / l2_norm_axis_0)\nexpect(node, inputs=[x], outputs=[y], name=\"test_l2normalization_axis_0\")"
       },
@@ -36236,6 +36240,10 @@
       {
         "summary": "l1normalization_axis_last",
         "code": "node = onnx.helper.make_node(\n    \"LpNormalization\", inputs=[\"x\"], outputs=[\"y\"], axis=-1, p=1\n)\nx = np.array(\n    [[[1.0, 2.0, 2.0], [3.0, 4.0, 0.0]], [[0.0, 5.0, 5.0], [6.0, 8.0, 0.0]]],\n    dtype=np.float32,\n)\nl1_norm_axis_last = np.sum(abs(x), axis=-1, keepdims=True)\ny = x / l1_norm_axis_last\nexpect(node, inputs=[x], outputs=[y], name=\"test_l1normalization_axis_last\")"
+      },
+      {
+        "summary": "l1normalization_negative_values",
+        "code": "node = onnx.helper.make_node(\n    \"LpNormalization\", inputs=[\"x\"], outputs=[\"y\"], axis=0, p=1\n)\nx = np.array([1.0, -1.0], dtype=np.float32)\nl1_norm = np.sum(abs(x), axis=0, keepdims=True)\ny = x / l1_norm\nexpect(\n    node,\n    inputs=[x],\n    outputs=[y],\n    name=\"test_l1normalization_negative_values\",\n)"
       },
       {
         "summary": "l2normalization_axis_0",

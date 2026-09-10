@@ -81,11 +81,12 @@
   {
     "name": "acc.bounds",
     "summary": "Represents normalized bounds information for acc data clause.",
-    "description": "This operation is used to record bounds used in acc data clause in a\n    normalized fashion (zero-based). This works well with the `PointerLikeType`\n    requirement in data clauses - since a `lowerbound` of 0 means looking\n    at data at the zero offset from pointer.\n\n    The operation must have an `upperbound` or `extent` (or both are allowed -\n    but not checked for consistency). When the source language's arrays are\n    not zero-based, the `startIdx` must specify the zero-position index.\n\n    The `stride` represents the distance between consecutive elements. For\n    multi-dimensional arrays, the `stride` for each outer dimension must account\n    for the complete size of all inner dimensions.\n\n    The `strideInBytes` flag indicates that the `stride` is specified in bytes\n    rather than the number of elements.\n\n    Examples below show copying a slice of 10-element array except first element.\n    Note that the examples use extent in data clause for C++ and upperbound\n    for Fortran (as per 2.7.1). To simplify examples, the constants are used\n    directly in the acc.bounds operands - this is not the syntax of operation.\n\n    C++:\n    ```\n    int array[10];\n    #pragma acc copy(array[1:9])\n    ```\n    =>\n    ```mlir\n    acc.bounds lb(1) ub(9) extent(9) startIdx(0) stride(1)\n    ```\n\n    Fortran:\n    ```\n    integer :: array(1:10)\n    !$acc copy(array(2:10))\n    ```\n    =>\n    ```mlir\n    acc.bounds lb(1) ub(9) extent(9) startIdx(1) stride(1)\n    ```",
+    "description": "This operation is used to record bounds used in acc data clause in a\n    normalized fashion (zero-based). This works well with the `PointerLikeType`\n    requirement in data clauses - since a `lowerbound` of 0 means looking\n    at data at the zero offset from pointer.\n\n    The operation must have an `upperbound` or `extent` (or both are allowed -\n    but not checked for consistency). When the source language's arrays are\n    not zero-based, the `startIdx` must specify the zero-position index.\n\n    `sourceExtent` is the extent of the corresponding dimension in the\n    original array. It may differ from `extent`, which describes the selected\n    section. When absent, the source extent is the same as `extent`.\n\n    The `stride` represents the distance between consecutive elements. For\n    multi-dimensional arrays, the `stride` for each outer dimension must account\n    for the complete size of all inner dimensions.\n\n    The `strideInBytes` flag indicates that the `stride` is specified in bytes\n    rather than the number of elements.\n\n    Examples below show copying a slice of 10-element array except first element.\n    Note that the examples use extent in data clause for C++ and upperbound\n    for Fortran (as per 2.7.1). To simplify examples, the constants are used\n    directly in the acc.bounds operands - this is not the syntax of operation.\n\n    C++:\n    ```\n    int array[10];\n    #pragma acc copy(array[1:9])\n    ```\n    =>\n    ```mlir\n    acc.bounds lb(1) ub(9) extent(9) startIdx(0) stride(1)\n    ```\n\n    Fortran:\n    ```\n    integer :: array(1:10)\n    !$acc copy(array(2:10))\n    ```\n    =>\n    ```mlir\n    acc.bounds lb(1) ub(9) extent(9) startIdx(1) stride(1)\n    ```",
     "operands": [
       { "name": "lowerbound", "type": "Optional<IntOrIndex>" },
       { "name": "upperbound", "type": "Optional<IntOrIndex>" },
       { "name": "extent", "type": "Optional<IntOrIndex>" },
+      { "name": "sourceExtent", "type": "Optional<IntOrIndex>" },
       { "name": "stride", "type": "Optional<IntOrIndex>" },
       { "name": "startIdx", "type": "Optional<IntOrIndex>" }
     ],
@@ -98,7 +99,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "oilist(\n        `lowerbound` `(` $lowerbound `:` type($lowerbound) `)`\n      | `upperbound` `(` $upperbound `:` type($upperbound) `)`\n      | `extent` `(` $extent `:` type($extent) `)`\n      | `stride` `(` $stride `:` type($stride) `)`\n      | `startIdx` `(` $startIdx `:` type($startIdx) `)`\n    ) (`strideInBytes` `(` $strideInBytes^ `)`)? attr-dict"
+    "assemblyFormat": "oilist(\n        `lowerbound` `(` $lowerbound `:` type($lowerbound) `)`\n      | `upperbound` `(` $upperbound `:` type($upperbound) `)`\n      | `extent` `(` $extent `:` type($extent) `)`\n      | `sourceExtent` `(` $sourceExtent `:` type($sourceExtent) `)`\n      | `stride` `(` $stride `:` type($stride) `)`\n      | `startIdx` `(` $startIdx `:` type($startIdx) `)`\n    ) (`strideInBytes` `(` $strideInBytes^ `)`)? attr-dict"
   },
   {
     "name": "acc.cache",
@@ -825,6 +826,34 @@
     ],
     "assemblyFormat": "( `combined` `(` custom<CombinedConstructsLoop>($combined)^ `)` )?\n    oilist(\n        `gang` `` custom<GangClause>($gangOperands, type($gangOperands),\n            $gangOperandsArgType, $gangOperandsDeviceType,\n            $gangOperandsSegments, $gang)\n      | `worker` `` custom<DeviceTypeOperandsWithKeywordOnly>(\n            $workerNumOperands, type($workerNumOperands),\n            $workerNumOperandsDeviceType, $worker)\n      | `vector` `` custom<DeviceTypeOperandsWithKeywordOnly>($vectorOperands,\n            type($vectorOperands), $vectorOperandsDeviceType, $vector)\n      | `private` `(` $privateOperands `:` type($privateOperands) `)`\n      | `firstprivate` `(` $firstprivateOperands `:` type($firstprivateOperands) `)`\n      | `tile` `(` custom<DeviceTypeOperandsWithSegment>($tileOperands,\n            type($tileOperands), $tileOperandsDeviceType, $tileOperandsSegments)\n        `)`\n      | `reduction` `(` $reductionOperands  `:` type($reductionOperands) `)`\n      | `cache` `(` $cacheOperands `:` type($cacheOperands) `)`\n    )\n    custom<LoopControl>($region, $lowerbound, type($lowerbound), $upperbound,\n        type($upperbound), $step, type($step))\n    ( `(` type($results)^ `)` )?\n    oilist(\n        `inclusiveUpperbound` `(` custom<DenseBoolArrayAttr>($inclusiveUpperbound) `)`\n      | `collapse` `(` custom<ArrayAttr>($collapse) `)`\n      | `collapseDeviceType` `(` custom<ArrayAttr>($collapseDeviceType) `)`\n      | `seq` custom<DeviceTypeArrayAttr>($seq)\n      | `independent` custom<DeviceTypeArrayAttr>($independent)\n      | `auto_` custom<DeviceTypeArrayAttr>($auto_)\n      | `unstructured` $unstructured\n    )\n    attr-dict-with-keyword",
     "hasCustomAssemblyFormat": true
+  },
+  {
+    "name": "acc.map_info",
+    "summary": "OpenACC map metadata for offload lowering",
+    "description": "Captures the runtime allocation or mapping contract for one object,\n    including attach points, descriptor facts, bounds, byte size, and offload\n    map-type flags. This operation does not itself allocate or map the object.\n    `accVar` is a result token of the same type as `var`; a construct consumes\n    the token to issue the corresponding runtime operation.\n\n    Data clauses use the token as a data operand of a data, compute, declare,\n    or update construct. When `var` is an `acc.privatize` result, the token is\n    used as the kernel argument and its `private` and parallel-level map flags\n    request the runtime allocation with the required replication.\n\n    - `var`: Mapped variable (pointer-like or mappable, same as data-entry\n      `var`).\n    - `varType`: Type of the mapped object (same role as data-entry `varType`).\n    - `varPtrPtr`: Optional attach point (host address of the pointer slot).\n    - `desc`: Optional base descriptor when it differs from `var`. Omitted when\n      `var` itself is that descriptor; consumers then use `var` whenever\n      `descKind` is not `none`.\n    - `descKind`: Which descriptor layouts describe the mapped object, as a\n      bitfield so that a nested descriptor can name each level. `none` means\n      the object is described by its address and `size` alone.\n    - `mapFlags`: Offload map-type flags (`to`/`from`/`ptr_and_obj`/`private`/\n      ...), combining enter and exit clause effects or describing a\n      privatized allocation.\n    - `elementSize`: Optional byte size of one element of the mapped object.\n      `bounds` and descriptor extents count elements rather than bytes, so\n      this is what converts them into byte strides. It is stated explicitly\n      because `varType` does not always determine it: a character or\n      derived-type element takes its length from the descriptor.\n    - `size`: Optional total mapped byte size. A constant `0` means the size is\n      carried by `bounds` or by a descriptor instead of being stated here, a\n      constant `-1` means it is not known at compile time, and a non-constant\n      value supplies the size at run time (e.g. loaded from a type\n      descriptor).\n    - `exitLoc`: Optional source location of the exit effects, which for a\n      structured construct is its end directive rather than the location of\n      this operation. Reported by the runtime for the region end.\n    - `accVar`: Result token. Its use by a construct causes that construct to\n      issue the runtime mapping or allocation described here.",
+    "operands": [
+      { "name": "var", "type": "OpenACC_AnyPointerOrMappableType" },
+      { "name": "varPtrPtr", "type": "Optional<OpenACC_PointerLikeTypeInterface>" },
+      { "name": "desc", "type": "Optional<OpenACC_AnyPointerOrMappableType>" },
+      { "name": "bounds", "type": "Variadic<OpenACC_DataBoundsType>" },
+      { "name": "size", "type": "Optional<IntOrIndex>" }
+    ],
+    "results": [
+      { "name": "accVar", "type": "OpenACC_AnyPointerOrMappableType" }
+    ],
+    "attributes": [
+      { "name": "varType", "type": "TypeAttr" },
+      { "name": "descKind", "type": "DefaultValuedAttr<OpenACC_DataDescKindAttr{none|cfi|memref|openacc; separator=','}, mlir::acc::DataDescKind::none>" },
+      { "name": "mapFlags", "type": "DefaultValuedAttr<OpenACC_MapFlagsAttr{none|to|from|delete|ptr_and_obj|private|literal|implicit|devptr|managed_devptr|no_create|gang_private|worker_private|vector_private|init_zero|device_resident|if_present|present|descriptor|reduction; separator=','}, mlir::acc::MapFlags::none>" },
+      { "name": "name", "type": "OptionalAttr<StrAttr>" },
+      { "name": "elementSize", "type": "OptionalAttr<ConfinedAttr<I64Attr, [ IntNonNegative ]>>" },
+      { "name": "exitLoc", "type": "OptionalAttr<LocationAttr>" }
+    ],
+    "traits": [
+      { "type": "AttrSizedOperandSegments" },
+      { "type": "AllTypesMatch<['var', 'accVar']>" }
+    ],
+    "assemblyFormat": "custom<Var>($var) `:` custom<VarPtrType>(type($var), $varType)\n    oilist(\n        `varPtrPtr` `(` $varPtrPtr `:` type($varPtrPtr) `)`\n      | `desc` `(` $desc `:` type($desc) `)`\n      | `bounds` `(` $bounds `)`\n      | `size` `(` $size `:` type($size) `)`\n      | `elementSize` `(` $elementSize `)`\n      | `name` `(` $name `)`\n      | `exitLoc` `(` custom<SourceLocation>($exitLoc) `)`\n    )\n    `descKind` `(` enum($descKind) `)`\n    `mapFlags` `(` enum($mapFlags) `)`\n    `->` type($accVar) attr-dict"
   },
   {
     "name": "acc.nocreate",
@@ -1690,14 +1719,13 @@
       { "name": "token", "type": "TTG_AsyncToken" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, triton::EvictionPolicy::NORMAL>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "contiguity", "type": "DefaultValuedAttr<I32Attr, 1>" }
     ],
     "traits": [
       { "type": "TypesMatchWith<'dst', 'mask', 'getI1SameShape($_self)'>" }
     ],
-    "assemblyFormat": "$src `,` $dst (`mask` $mask^)?\n    oilist(`cacheModifier` `=` $cache | `evictionPolicy` `=` $evict)\n    attr-dict `:` qualified(type($src)) `->` type($dst)"
+    "assemblyFormat": "$src `,` $dst (`mask` $mask^)?\n    oilist(`cachePolicy` `=` $cachePolicy)\n    attr-dict `:` qualified(type($src)) `->` type($dst)"
   },
   {
     "name": "amdg.async_copy_mbarrier_arrive",
@@ -1909,7 +1937,7 @@
       { "name": "result", "type": "TT_Tensor" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, ::mlir::triton::CacheModifier::NONE>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "contiguity", "type": "DefaultValuedAttr<I32Attr, 1>" }
     ],
     "traits": [
@@ -1919,7 +1947,7 @@
       { "type": "TypesMatchWith<'result', 'mask', 'getI1SameShape($_self)'>" },
       { "type": "TypesMatchWith<'result', 'other', '$_self'>" }
     ],
-    "assemblyFormat": "$ptr `[` $offsets `]` (`,` $mask^)? (`,` $other^)?\n      oilist(`cacheModifier` `=` $cache)\n      (`stride` `=` $stride^)?\n      attr-dict `:` qualified(type($ptr)) `->` type($result)"
+    "assemblyFormat": "$ptr `[` $offsets `]` (`,` $mask^)? (`,` $other^)?\n      (`stride` `=` $stride^)?\n      attr-dict `:` qualified(type($ptr)) `->` type($result)"
   },
   {
     "name": "amdg.buffer_load_to_local",
@@ -1937,7 +1965,7 @@
       { "name": "token", "type": "TTG_AsyncToken" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, ::mlir::triton::CacheModifier::NONE>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "contiguity", "type": "DefaultValuedAttr<I32Attr, 1>" }
     ],
     "traits": [
@@ -1946,7 +1974,7 @@
       { "type": "TypesMatchWith<'offsets', 'mask', 'getI1SameShape($_self)'>" },
       { "type": "TypesMatchWith<'offsets', 'other', 'cast<TensorType>($_self).clone(getPointeeType($ptr.getType()))'>" }
     ],
-    "assemblyFormat": "$ptr `[` $offsets `]` (`mask` `=` $mask^)? (`other` `=` $other^)? (`stride` `=` $stride^)?\n      oilist(`cacheModifier` `=` $cache) `into` $dest\n      attr-dict `:` qualified(type($ptr)) `[` type($offsets) `]` type($other) `->` type($dest)"
+    "assemblyFormat": "$ptr `[` $offsets `]` (`mask` `=` $mask^)? (`other` `=` $other^)? (`stride` `=` $stride^)?\n      oilist(`cachePolicy` `=` $cachePolicy) `into` $dest\n      attr-dict `:` qualified(type($ptr)) `[` type($offsets) `]` type($other) `->` type($dest)"
   },
   {
     "name": "amdg.buffer_store",
@@ -1960,7 +1988,7 @@
       { "name": "mask", "type": "Optional<TT_BoolTensor>" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, mlir::triton::CacheModifier::NONE>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "contiguity", "type": "DefaultValuedAttr<I32Attr, 1>" }
     ],
     "traits": [
@@ -1969,7 +1997,7 @@
       { "type": "TypesMatchWith<'value', 'offsets', 'getI32SameShape($_self)'>" },
       { "type": "TypesMatchWith<'value', 'mask', 'getI1SameShape($_self)'>" }
     ],
-    "assemblyFormat": "$value `,` $ptr `[` $offsets `]` (`,` $mask^)?\n      oilist(`cacheModifier` `=` $cache)\n      (`stride` `=` $stride^)?\n      attr-dict `:` qualified(type($ptr)) `->` type($value)"
+    "assemblyFormat": "$value `,` $ptr `[` $offsets `]` (`,` $mask^)?\n      (`stride` `=` $stride^)?\n      attr-dict `:` qualified(type($ptr)) `->` type($value)"
   },
   {
     "name": "amdg.cluster_barrier_arrive",
@@ -11737,7 +11765,7 @@
   {
     "name": "emitc.assign",
     "summary": "Assign operation",
-    "description": "The `emitc.assign` operation stores an SSA value to the location designated by an\n    EmitC variable. This operation doesn't return any value. The assigned value\n    must be of the same type as the variable being assigned. The operation is\n    emitted as a C/C++ '=' operator.\n\n    Example:\n\n    ```mlir\n    // Integer variable\n    %0 = \"emitc.variable\"(){value = 42 : i32} : () -> !emitc.lvalue<i32>\n    %1 = emitc.call_opaque \"foo\"() : () -> (i32)\n\n    // Assign emitted as `... = ...;`\n    \"emitc.assign\"(%0, %1) : (!emitc.lvalue<i32>, i32) -> ()\n    ```",
+    "description": "The `emitc.assign` operation stores an SSA value to the location designated by an\n    EmitC variable. This operation doesn't return any value. The assigned value\n    must be of the same type as the variable being assigned. The operation is\n    emitted as a C/C++ '=' operator.\n\n    Example:\n\n    ```mlir\n    // Integer variable\n    %0 = \"emitc.variable\"() <{value = 42 : i32}> : () -> !emitc.lvalue<i32>\n    %1 = emitc.call_opaque \"foo\"() : () -> (i32)\n\n    // Assign emitted as `... = ...;`\n    \"emitc.assign\"(%0, %1) : (!emitc.lvalue<i32>, i32) -> ()\n    ```",
     "operands": [
       { "name": "var", "type": "EmitC_LValueType" },
       { "name": "value", "type": "EmitCType" }
@@ -11833,12 +11861,12 @@
       { "name": "arg_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
       { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" }
     ],
-    "assemblyFormat": "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)"
+    "assemblyFormat": "$callee `(` $operands `)`\n    oilist<`,`>(`arg_attrs` `=` $arg_attrs\n               | `res_attrs` `=` $res_attrs) attr-dict `:`\n    functional-type($operands, results)"
   },
   {
     "name": "emitc.call_opaque",
     "summary": "Opaque call operation",
-    "description": "The `emitc.call_opaque` operation represents a C++ function call. The callee\n    can be an arbitrary non-empty string. The call allows specifying order\n    of operands and attributes in the call as follows:\n\n    - integer value of index type refers to an operand;\n    - attribute which will get lowered to constant value in call;\n\n    Example:\n\n    ```mlir\n    // Custom form defining a call to `foo()`.\n    %0 = emitc.call_opaque \"foo\" () : () -> i32\n\n    // Generic form of the same operation.\n    %0 = \"emitc.call_opaque\"() {callee = \"foo\"} : () -> i32\n    ```",
+    "description": "The `emitc.call_opaque` operation represents a C++ function call. The callee\n    can be an arbitrary non-empty string. The call allows specifying order\n    of operands and attributes in the call as follows:\n\n    - integer value of index type refers to an operand;\n    - attribute which will get lowered to constant value in call;\n\n    Example:\n\n    ```mlir\n    // Custom form defining a call to `foo()`.\n    %0 = emitc.call_opaque \"foo\" () : () -> i32\n\n    // Generic form of the same operation.\n    %0 = \"emitc.call_opaque\"() <{callee = \"foo\"}> : () -> i32\n    ```",
     "operands": [
       { "name": "arg_operands", "type": "Variadic<AnyTypeOf<[ EmitCType, EmitC_LValueType ]>>" }
     ],
@@ -11865,7 +11893,7 @@
     "attributes": [
       { "name": "pure", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$source attr-dict `:` type($source) `to` type($dest)"
+    "assemblyFormat": "$source (`pure` $pure^)? attr-dict `:` type($source) `to` type($dest)"
   },
   {
     "name": "emitc.class",
@@ -11904,7 +11932,7 @@
   {
     "name": "emitc.conditional",
     "summary": "Conditional (ternary) operation",
-    "description": "With the `emitc.conditional` operation the ternary conditional operator can\n    be applied.\n\n    Example:\n\n    ```mlir\n    %0 = emitc.cmp gt, %arg0, %arg1 : (i32, i32) -> i1\n\n    %c0 = \"emitc.constant\"() {value = 10 : i32} : () -> i32\n    %c1 = \"emitc.constant\"() {value = 11 : i32} : () -> i32\n\n    %1 = emitc.conditional %0, %c0, %c1 : i32\n    ```\n    ```c++\n    // Code emitted for the operations above.\n    bool v3 = v1 > v2;\n    int32_t v4 = 10;\n    int32_t v5 = 11;\n    int32_t v6 = v3 ? v4 : v5;\n    ```",
+    "description": "With the `emitc.conditional` operation the ternary conditional operator can\n    be applied.\n\n    Example:\n\n    ```mlir\n    %0 = emitc.cmp gt, %arg0, %arg1 : (i32, i32) -> i1\n\n    %c0 = \"emitc.constant\"() <{value = 10 : i32}> : () -> i32\n    %c1 = \"emitc.constant\"() <{value = 11 : i32}> : () -> i32\n\n    %1 = emitc.conditional %0, %c0, %c1 : i32\n    ```\n    ```c++\n    // Code emitted for the operations above.\n    bool v3 = v1 > v2;\n    int32_t v4 = 10;\n    int32_t v5 = 11;\n    int32_t v6 = v3 ? v4 : v5;\n    ```",
     "operands": [
       { "name": "condition", "type": "I1" },
       { "name": "true_value", "type": "EmitCType" },
@@ -11921,7 +11949,7 @@
   {
     "name": "emitc.constant",
     "summary": "Constant operation",
-    "description": "The `emitc.constant` operation produces an SSA value equal to some constant\n    specified by an attribute. This can be used to form simple integer and\n    floating point constants, as well as more exotic things like tensor\n    constants. The `emitc.constant` operation also supports the EmitC opaque\n    attribute and the EmitC opaque type. Since folding is supported,\n    it should not be used with pointers.\n\n    Example:\n\n    ```mlir\n    // Integer constant\n    %0 = \"emitc.constant\"(){value = 42 : i32} : () -> i32\n\n    // Constant emitted as `char = CHAR_MIN;`\n    %1 = \"emitc.constant\"() {value = #emitc.opaque<\"CHAR_MIN\">}\n      : () -> !emitc.opaque<\"char\">\n    ```",
+    "description": "The `emitc.constant` operation produces an SSA value equal to some constant\n    specified by an attribute. This can be used to form simple integer and\n    floating point constants, as well as more exotic things like tensor\n    constants. The `emitc.constant` operation also supports the EmitC opaque\n    attribute and the EmitC opaque type. Since folding is supported,\n    it should not be used with pointers.\n\n    Example:\n\n    ```mlir\n    // Integer constant\n    %0 = \"emitc.constant\"() <{value = 42 : i32}> : () -> i32\n\n    // Constant emitted as `char = CHAR_MIN;`\n    %1 = \"emitc.constant\"() <{value = #emitc.opaque<\"CHAR_MIN\">}>\n      : () -> !emitc.opaque<\"char\">\n    ```",
     "results": [
       { "name": "result", "type": "EmitCType" }
     ],
@@ -12128,7 +12156,7 @@
   {
     "name": "emitc.include",
     "summary": "Include operation",
-    "description": "The `emitc.include` operation allows to define a source file inclusion via the\n    `#include` directive.\n\n    Example:\n\n    ```mlir\n    // Custom form defining the inclusion of `<myheader>`.\n    emitc.include <\"myheader.h\">\n\n    // Generic form of the same operation.\n    \"emitc.include\" (){include = \"myheader.h\", is_standard_include} : () -> ()\n\n    // Custom form defining the inclusion of `\"myheader\"`.\n    emitc.include \"myheader.h\"\n\n    // Generic form of the same operation.\n    \"emitc.include\" (){include = \"myheader.h\"} : () -> ()\n    ```",
+    "description": "The `emitc.include` operation allows to define a source file inclusion via the\n    `#include` directive.\n\n    Example:\n\n    ```mlir\n    // Custom form defining the inclusion of `<myheader>`.\n    emitc.include <\"myheader.h\">\n\n    // Generic form of the same operation.\n    \"emitc.include\" () <{include = \"myheader.h\", is_standard_include}> : () -> ()\n\n    // Custom form defining the inclusion of `\"myheader\"`.\n    emitc.include \"myheader.h\"\n\n    // Generic form of the same operation.\n    \"emitc.include\" () <{include = \"myheader.h\"}> : () -> ()\n    ```",
     "attributes": [
       { "name": "include", "type": "StrAttr" },
       { "name": "is_standard_include", "type": "UnitAttr" }
@@ -12200,7 +12228,7 @@
   {
     "name": "emitc.member",
     "summary": "Member operation",
-    "description": "With the `emitc.member` operation the member access operator `.` can be\n    applied.\n\n    Example:\n\n    ```mlir\n    %0 = \"emitc.member\" (%arg0) {member = \"a\"}\n        : (!emitc.opaque<\"mystruct\">) -> i32\n    %0 = \"emitc.member\" (%arg0) {member = \"a\"}\n        : (!emitc.lvalue<!emitc.opaque<\"mystruct\">>) -> !emitc.lvalue<i32>\n    %1 = \"emitc.member\" (%arg0) {member = \"b\"}\n        : (!emitc.lvalue<!emitc.opaque<\"mystruct\">>) -> !emitc.array<2xi32>\n    ```",
+    "description": "With the `emitc.member` operation the member access operator `.` can be\n    applied.\n\n    Example:\n\n    ```mlir\n    %0 = \"emitc.member\" (%arg0) <{member = \"a\"}>\n        : (!emitc.opaque<\"mystruct\">) -> i32\n    %0 = \"emitc.member\" (%arg0) <{member = \"a\"}>\n        : (!emitc.lvalue<!emitc.opaque<\"mystruct\">>) -> !emitc.lvalue<i32>\n    %1 = \"emitc.member\" (%arg0) <{member = \"b\"}>\n        : (!emitc.lvalue<!emitc.opaque<\"mystruct\">>) -> !emitc.array<2xi32>\n    ```",
     "operands": [
       { "name": "operand", "type": "AnyTypeOf<[EmitC_OpaqueType, EmitC_LValueOf<[EmitC_OpaqueType]>]>" }
     ],
@@ -12232,7 +12260,7 @@
   {
     "name": "emitc.member_of_ptr",
     "summary": "Member of pointer operation",
-    "description": "With the `emitc.member_of_ptr` operation the member access operator `->`\n    can be applied.\n\n    Example:\n\n    ```mlir\n    %0 = \"emitc.member_of_ptr\" (%arg0) {member = \"a\"}\n        : (!emitc.lvalue<!emitc.ptr<!emitc.opaque<\"mystruct\">>>)\n        -> !emitc.lvalue<i32>\n    %1 = \"emitc.member_of_ptr\" (%arg0) {member = \"b\"}\n        : (!emitc.lvalue<!emitc.ptr<!emitc.opaque<\"mystruct\">>>)\n        -> !emitc.array<2xi32>\n    ```",
+    "description": "With the `emitc.member_of_ptr` operation the member access operator `->`\n    can be applied.\n\n    Example:\n\n    ```mlir\n    %0 = \"emitc.member_of_ptr\" (%arg0) <{member = \"a\"}>\n        : (!emitc.lvalue<!emitc.ptr<!emitc.opaque<\"mystruct\">>>)\n        -> !emitc.lvalue<i32>\n    %1 = \"emitc.member_of_ptr\" (%arg0) <{member = \"b\"}>\n        : (!emitc.lvalue<!emitc.ptr<!emitc.opaque<\"mystruct\">>>)\n        -> !emitc.array<2xi32>\n    ```",
     "operands": [
       { "name": "operand", "type": "EmitC_LValueOf<[EmitC_OpaqueType, EmitC_PointerType]>" }
     ],
@@ -12389,7 +12417,7 @@
   {
     "name": "emitc.switch",
     "summary": "Switch operation",
-    "description": "The `emitc.switch` is a control-flow operation that branches to one of\n    the given regions based on the values of the argument and the cases.\n    The operand to a switch operation is a opaque, integral or pointer\n    wide types.\n\n    The operation always has a \"default\" region and any number of case regions\n    denoted by integer constants. Control-flow transfers to the case region\n    whose constant value equals the value of the argument. If the argument does\n    not equal any of the case values, control-flow transfer to the \"default\"\n    region.\n\n    The operation does not return any value. Moreover, case regions must be\n    explicitly terminated using the `emitc.yield` operation. Default region is\n    yielded implicitly.\n\n    Example:\n\n    ```mlir\n    // Example:\n    emitc.switch %0 : i32\n    case 2 {\n      %1 = emitc.call_opaque \"func_b\" () : () -> i32\n      emitc.yield\n    }\n    case 5 {\n      %2 = emitc.call_opaque \"func_a\" () : () -> i32\n      emitc.yield\n    }\n    default {\n      %3 = \"emitc.constant\"(){value = 42.0 : f32} : () -> f32\n      emitc.call_opaque \"func2\" (%3) : (f32) -> ()\n    }\n    ```\n    ```c++\n    // Code emitted for the operations above.\n    switch (v1) {\n    case 2: {\n      int32_t v2 = func_b();\n      break;\n    }\n    case 5: {\n      int32_t v3 = func_a();\n      break;\n    }\n    default: {\n      float v4 = 4.200000000e+01f;\n      func2(v4);\n      break;\n    }\n    }\n    ```",
+    "description": "The `emitc.switch` is a control-flow operation that branches to one of\n    the given regions based on the values of the argument and the cases.\n    The operand to a switch operation is a opaque, integral or pointer\n    wide types.\n\n    The operation always has a \"default\" region and any number of case regions\n    denoted by integer constants. Control-flow transfers to the case region\n    whose constant value equals the value of the argument. If the argument does\n    not equal any of the case values, control-flow transfer to the \"default\"\n    region.\n\n    The operation does not return any value. Moreover, case regions must be\n    explicitly terminated using the `emitc.yield` operation. Default region is\n    yielded implicitly.\n\n    Example:\n\n    ```mlir\n    // Example:\n    emitc.switch %0 : i32\n    case 2 {\n      %1 = emitc.call_opaque \"func_b\" () : () -> i32\n      emitc.yield\n    }\n    case 5 {\n      %2 = emitc.call_opaque \"func_a\" () : () -> i32\n      emitc.yield\n    }\n    default {\n      %3 = \"emitc.constant\"() <{value = 42.0 : f32}> : () -> f32\n      emitc.call_opaque \"func2\" (%3) : (f32) -> ()\n    }\n    ```\n    ```c++\n    // Code emitted for the operations above.\n    switch (v1) {\n    case 2: {\n      int32_t v2 = func_b();\n      break;\n    }\n    case 5: {\n      int32_t v3 = func_a();\n      break;\n    }\n    default: {\n      float v4 = 4.200000000e+01f;\n      func2(v4);\n      break;\n    }\n    }\n    ```",
     "operands": [
       { "name": "arg", "type": "IntegerIndexOrOpaqueType" }
     ],
@@ -12424,7 +12452,7 @@
   {
     "name": "emitc.variable",
     "summary": "Variable operation",
-    "description": "The `emitc.variable` operation produces an SSA value equal to some value\n    specified by an attribute. This can be used to form simple integer and\n    floating point variables, as well as more exotic things like tensor\n    variables. The `emitc.variable` operation also supports the EmitC opaque\n    attribute and the EmitC opaque type. If further supports the EmitC\n    pointer type, whereas folding is not supported.\n    The `emitc.variable` is emitted as a C/C++ local variable.\n\n    Example:\n\n    ```mlir\n    // Integer variable\n    %0 = \"emitc.variable\"(){value = 42 : i32} : () -> !emitc.lvalue<i32>\n\n    // Variable emitted as `int32_t* = NULL;`\n    %1 = \"emitc.variable\"() {value = #emitc.opaque<\"NULL\">}\n      : () -> !emitc.lvalue<!emitc.ptr<!emitc.opaque<\"int32_t\">>>\n    ```\n\n    Since folding is not supported, it can be used with pointers.\n    As an example, it is valid to create pointers to `variable` operations\n    by using `address_of` operations and pass these to a `call` operation.\n    ```mlir\n    %0 = \"emitc.variable\"() {value = 0 : i32} : () -> !emitc.lvalue<i32>\n    %1 = \"emitc.variable\"() {value = 0 : i32} : () -> !emitc.lvalue<i32>\n    %2 = emitc.address_of %0 : !emitc.lvalue<i32>\n    %3 = emitc.address_of %1 : !emitc.lvalue<i32>\n    emitc.call_opaque \"write\"(%2, %3)\n      : (!emitc.ptr<i32>, !emitc.ptr<i32>) -> ()\n    ```",
+    "description": "The `emitc.variable` operation produces an SSA value equal to some value\n    specified by an attribute. This can be used to form simple integer and\n    floating point variables, as well as more exotic things like tensor\n    variables. The `emitc.variable` operation also supports the EmitC opaque\n    attribute and the EmitC opaque type. If further supports the EmitC\n    pointer type, whereas folding is not supported.\n    The `emitc.variable` is emitted as a C/C++ local variable.\n\n    Example:\n\n    ```mlir\n    // Integer variable\n    %0 = \"emitc.variable\"() <{value = 42 : i32}> : () -> !emitc.lvalue<i32>\n\n    // Variable emitted as `int32_t* = NULL;`\n    %1 = \"emitc.variable\"() <{value = #emitc.opaque<\"NULL\">}>\n      : () -> !emitc.lvalue<!emitc.ptr<!emitc.opaque<\"int32_t\">>>\n    ```\n\n    Since folding is not supported, it can be used with pointers.\n    As an example, it is valid to create pointers to `variable` operations\n    by using `address_of` operations and pass these to a `call` operation.\n    ```mlir\n    %0 = \"emitc.variable\"() <{value = 0 : i32}> : () -> !emitc.lvalue<i32>\n    %1 = \"emitc.variable\"() <{value = 0 : i32}> : () -> !emitc.lvalue<i32>\n    %2 = emitc.address_of %0 : !emitc.lvalue<i32>\n    %3 = emitc.address_of %1 : !emitc.lvalue<i32>\n    emitc.call_opaque \"write\"(%2, %3)\n      : (!emitc.ptr<i32>, !emitc.ptr<i32>) -> ()\n    ```",
     "results": [
       { "name": "result", "type": "AnyTypeOf<[ EmitC_ArrayType, EmitC_LValueType ]>" }
     ],
@@ -14735,7 +14763,7 @@
       { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
       { "name": "no_inline", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)"
+    "assemblyFormat": "$callee `(` $operands `)` prop-dict attr-dict `:`\n    functional-type($operands, results)"
   },
   {
     "name": "func.call_indirect",
@@ -14756,7 +14784,7 @@
       { "type": "TypesMatchWith<'callee', 'callee_operands', '::llvm::cast<FunctionType>($_self).getInputs()'>" },
       { "type": "TypesMatchWith<'callee', 'results', '::llvm::cast<FunctionType>($_self).getResults()'>" }
     ],
-    "assemblyFormat": "$callee `(` $callee_operands `)` attr-dict `:` type($callee)"
+    "assemblyFormat": "$callee `(` $callee_operands `)`\n    oilist<`,`>(\n        `arg_attrs` `=` $arg_attrs\n      | `res_attrs` `=` $res_attrs\n    )\n    attr-dict `:` type($callee)"
   },
   {
     "name": "func.constant",
@@ -22883,7 +22911,7 @@
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
     "traits": [
-      { "type": "TypesMatchWith<'lhs', 'res', '::getI1SameShape($_self)'>" }
+      { "type": "TypesMatchWith<'lhs', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
     "hasCustomAssemblyFormat": true
   },
@@ -23152,7 +23180,7 @@
       { "name": "predicate", "type": "ICmpPredicate{eq|ne|slt|sle|sgt|sge|ult|ule|ugt|uge}" }
     ],
     "traits": [
-      { "type": "TypesMatchWith<'lhs', 'res', '::getI1SameShape($_self)'>" }
+      { "type": "TypesMatchWith<'lhs', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
     "hasCustomAssemblyFormat": true
   },
@@ -23186,10 +23214,11 @@
       { "name": "has_side_effects", "type": "UnitAttr" },
       { "name": "is_align_stack", "type": "UnitAttr" },
       { "name": "tail_call_kind", "type": "DefaultValuedAttr<TailCallKind, TailCallKind::None>" },
+      { "name": "convergent", "type": "UnitAttr" },
       { "name": "asm_dialect", "type": "OptionalAttr<DefaultValuedAttr<AsmATTOrIntel{att|intel}, AsmDialect::AD_ATT>>" },
       { "name": "operand_attrs", "type": "OptionalAttr<ArrayAttr>" }
     ],
-    "assemblyFormat": "(`has_side_effects` $has_side_effects^)?\n    (`is_align_stack` $is_align_stack^)?\n    (`tail_call_kind` `=` $tail_call_kind^)?\n    (`asm_dialect` `=` $asm_dialect^)?\n    (`operand_attrs` `=` $operand_attrs^)?\n    attr-dict\n    $asm_string `,` $constraints\n    operands `:` functional-type(operands, results)"
+    "assemblyFormat": "(`has_side_effects` $has_side_effects^)?\n    (`is_align_stack` $is_align_stack^)?\n    (`tail_call_kind` `=` $tail_call_kind^)?\n    (`convergent` $convergent^)?\n    (`asm_dialect` `=` $asm_dialect^)?\n    (`operand_attrs` `=` $operand_attrs^)?\n    attr-dict\n    $asm_string `,` $constraints\n    operands `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.insertelement",
@@ -23380,6 +23409,20 @@
     ],
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
+    ],
+    "traits": [
+      { "type": "SameOperandsAndResultType" }
+    ],
+    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+  },
+  {
+    "name": "llvm.intr.clmul",
+    "operands": [
+      { "name": "a", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" },
+      { "name": "b", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
     ],
     "traits": [
       { "type": "SameOperandsAndResultType" }
@@ -23985,7 +24028,7 @@
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
     "traits": [
-      { "type": "TypesMatchWith<'arg_0', 'res', '::getI1SameShape($_self)'>" }
+      { "type": "TypesMatchWith<'arg_0', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
     "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
   },
@@ -24004,7 +24047,7 @@
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
     "traits": [
-      { "type": "TypesMatchWith<'arg_0', 'res', '::getI1SameShape($_self)'>" }
+      { "type": "TypesMatchWith<'arg_0', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
     "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
   },
@@ -25010,7 +25053,11 @@
       { "name": "res", "type": "LLVM_AnyVector" }
     ],
     "attributes": [
-      { "name": "alignment", "type": "I32Attr" }
+      { "name": "alignment", "type": "OptionalAttr<I64Attr>" },
+      { "name": "access_groups", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AccessGroupAttr>>" },
+      { "name": "alias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
     "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
   },
@@ -25025,8 +25072,12 @@
       { "name": "res", "type": "LLVM_AnyVector" }
     ],
     "attributes": [
-      { "name": "alignment", "type": "I32Attr" },
-      { "name": "nontemporal", "type": "UnitAttr" }
+      { "name": "alignment", "type": "OptionalAttr<I64Attr>" },
+      { "name": "nontemporal", "type": "UnitAttr" },
+      { "name": "access_groups", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AccessGroupAttr>>" },
+      { "name": "alias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
     "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
   },
@@ -25038,7 +25089,11 @@
       { "name": "mask", "type": "LLVM_VectorOf<I1>" }
     ],
     "attributes": [
-      { "name": "alignment", "type": "I32Attr" }
+      { "name": "alignment", "type": "OptionalAttr<I64Attr>" },
+      { "name": "access_groups", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AccessGroupAttr>>" },
+      { "name": "alias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
     "assemblyFormat": "$value `,` $ptrs `,` $mask attr-dict `:` type($value) `,` type($mask) `into` type($ptrs)"
   },
@@ -25050,8 +25105,12 @@
       { "name": "mask", "type": "LLVM_VectorOf<I1>" }
     ],
     "attributes": [
-      { "name": "alignment", "type": "I32Attr" },
-      { "name": "nontemporal", "type": "UnitAttr" }
+      { "name": "alignment", "type": "OptionalAttr<I64Attr>" },
+      { "name": "nontemporal", "type": "UnitAttr" },
+      { "name": "access_groups", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AccessGroupAttr>>" },
+      { "name": "alias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
+      { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
     "assemblyFormat": "$value `,` $data `,` $mask attr-dict `:` type($value) `,` type($mask) `into` qualified(type($data))"
   },
@@ -25278,6 +25337,34 @@
     ],
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
+    ],
+    "traits": [
+      { "type": "SameOperandsAndResultType" }
+    ],
+    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+  },
+  {
+    "name": "llvm.intr.pdep",
+    "operands": [
+      { "name": "a", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" },
+      { "name": "b", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ],
+    "traits": [
+      { "type": "SameOperandsAndResultType" }
+    ],
+    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+  },
+  {
+    "name": "llvm.intr.pext",
+    "operands": [
+      { "name": "a", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" },
+      { "name": "b", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
     ],
     "traits": [
       { "type": "SameOperandsAndResultType" }
@@ -35339,15 +35426,16 @@
   {
     "name": "nvvm.tcgen05.alloc",
     "summary": "Tcgen05 alloc operation",
-    "description": "The `tcgen05.alloc` Op allocates tensor core memory for\n    the amount specified by `nCols` and writes the destination\n    address to the `addr` argument. The `nCols` operand specifies the\n    number of columns to be allocated and it must be a power-of-two.\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-memory-alloc-manage-instructions)",
+    "description": "The `tcgen05.alloc` Op allocates tensor core memory for\n    the amount specified by `nCols` and writes the destination\n    address to the `addr` argument. The `nCols` operand specifies the\n    number of columns to be allocated and it must be a power-of-two\n    for non-exclusive allocations and a multiple of 32 for exclusive\n    allocations. The `exclusive` attribute requests an exclusive\n    allocation and defaults to `false`. When `exclusive` is `true`, the\n    `.exclusive` variant is emitted, which claims ownership of the\n    allocation permit. No other allocation may exist at the same time\n    as an exclusive allocation.\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-memory-alloc-manage-instructions)",
     "operands": [
       { "name": "addr", "type": "AnyTypeOf<[LLVM_AnyPointer, LLVM_PointerShared]>" },
       { "name": "nCols", "type": "I32" }
     ],
     "attributes": [
-      { "name": "group", "type": "DefaultValuedAttr<CTAGroupKindAttr{cta_1|cta_2}, CTAGroupKind::CTA_1>" }
+      { "name": "group", "type": "DefaultValuedAttr<CTAGroupKindAttr{cta_1|cta_2}, CTAGroupKind::CTA_1>" },
+      { "name": "isExclusive", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$addr `,` $nCols (`,` `group` `=` $group^)? attr-dict `:` type(operands)"
+    "assemblyFormat": "$addr `,` $nCols (`,` `group` `=` $group^)?\n    (`exclusive` `=` $isExclusive^)? attr-dict `:` type(operands)"
   },
   {
     "name": "nvvm.tcgen05.commit",
@@ -35382,15 +35470,16 @@
   {
     "name": "nvvm.tcgen05.dealloc",
     "summary": "Tcgen05 dealloc operation",
-    "description": "The `tcgen05.dealloc` Op de-allocates the tensor core memory\n    specified by `tmemAddr`, which must be from a previous tensor\n    memory allocation. The `nCols` operand specifies the number\n    of columns to be de-allocated, and it must be a power-of-two.\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-memory-alloc-manage-instructions)",
+    "description": "The `tcgen05.dealloc` Op de-allocates the tensor core memory\n    specified by `tmemAddr`, which must be from a previous tensor\n    memory allocation. The `nCols` operand specifies the number\n    of columns to be de-allocated, and it must be a power-of-two\n    for non-exclusive deallocations and a multiple of 32 for exclusive\n    deallocations. The `exclusive` attribute defaults to `false`. When\n    `exclusive` is `true`, the `.exclusive` variant is emitted. Memory\n    must be deallocated with `exclusive` if and only if it was allocated\n    with `exclusive`.\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-memory-alloc-manage-instructions)",
     "operands": [
       { "name": "taddr", "type": "LLVM_PointerTensor" },
       { "name": "nCols", "type": "I32" }
     ],
     "attributes": [
-      { "name": "group", "type": "DefaultValuedAttr<CTAGroupKindAttr{cta_1|cta_2}, CTAGroupKind::CTA_1>" }
+      { "name": "group", "type": "DefaultValuedAttr<CTAGroupKindAttr{cta_1|cta_2}, CTAGroupKind::CTA_1>" },
+      { "name": "isExclusive", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$taddr `,` $nCols (`,` `group` `=` $group^)? attr-dict `:` type(operands)"
+    "assemblyFormat": "$taddr `,` $nCols (`,` `group` `=` $group^)?\n    (`exclusive` `=` $isExclusive^)? attr-dict `:` type(operands)"
   },
   {
     "name": "nvvm.tcgen05.fence",
@@ -35988,10 +36077,9 @@
     ],
     "attributes": [
       { "name": "txCount", "type": "I32Attr" },
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, ::mlir::triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, ::mlir::triton::EvictionPolicy::NORMAL>" }
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" }
     ],
-    "assemblyFormat": "$desc `[` $indices `]` $txCount $result\n    oilist(\n      `cacheModifier` `=` $cache |\n      `evictionPolicy` `=` $evict\n    )\n    attr-dict `:` type(operands)"
+    "assemblyFormat": "$desc `[` $indices `]` $txCount $result\n    attr-dict `:` type(operands)"
   },
   {
     "name": "nvws.producer_acquire",
@@ -46792,9 +46880,9 @@
   },
   {
     "name": "rocdl.s.barrier.init",
-    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Initialize a named barrier with member count.\n    rocdl.s.barrier.init %ptr member_cnt = 1 : !llvm.ptr<3>\n    ```",
+    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Initialize a named barrier with member count.\n    rocdl.s.barrier.init %ptr member_cnt = 1 : !llvm.ptr<15>\n    ```",
     "operands": [
-      { "name": "ptr", "type": "ROCDLBufferLDS" }
+      { "name": "ptr", "type": "ROCDLBarrier" }
     ],
     "attributes": [
       { "name": "memberCnt", "type": "I32Attr" }
@@ -46803,9 +46891,9 @@
   },
   {
     "name": "rocdl.s.barrier.join",
-    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Join a named barrier.\n    rocdl.s.barrier.join %ptr : !llvm.ptr<3>\n    ```",
+    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Join a named barrier.\n    rocdl.s.barrier.join %ptr : !llvm.ptr<15>\n    ```",
     "operands": [
-      { "name": "ptr", "type": "ROCDLBufferLDS" }
+      { "name": "ptr", "type": "ROCDLBarrier" }
     ],
     "assemblyFormat": "$ptr attr-dict `:` qualified(type($ptr))"
   },
@@ -46838,9 +46926,9 @@
   },
   {
     "name": "rocdl.s.barrier.signal.var",
-    "description": "Available on gfx1250+.\n\n    If `memberCnt` is 0, the member count is retained from a previous initialization.\n\n    Example:\n    ```mlir\n    // Signal a named barrier with variable ID.\n    rocdl.s.barrier.signal.var %ptr member_cnt = 1 : !llvm.ptr<3>\n    ```",
+    "description": "Available on gfx1250+.\n\n    If `memberCnt` is 0, the member count is retained from a previous initialization.\n\n    Example:\n    ```mlir\n    // Signal a named barrier with variable ID.\n    rocdl.s.barrier.signal.var %ptr member_cnt = 1 : !llvm.ptr<15>\n    ```",
     "operands": [
-      { "name": "ptr", "type": "ROCDLBufferLDS" }
+      { "name": "ptr", "type": "ROCDLBarrier" }
     ],
     "attributes": [
       { "name": "memberCnt", "type": "I32Attr" }
@@ -46868,9 +46956,9 @@
   },
   {
     "name": "rocdl.s.get.named.barrier.state",
-    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Query named barrier state by pointer.\n    %0 = rocdl.s.get.named.barrier.state %ptr : !llvm.ptr<3> -> i32\n    ```",
+    "description": "Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Query named barrier state by pointer.\n    %0 = rocdl.s.get.named.barrier.state %ptr : !llvm.ptr<15> -> i32\n    ```",
     "operands": [
-      { "name": "ptr", "type": "ROCDLBufferLDS" }
+      { "name": "ptr", "type": "ROCDLBarrier" }
     ],
     "results": [
       { "name": "res", "type": "I32" }
@@ -46965,9 +47053,9 @@
   },
   {
     "name": "rocdl.s.wakeup.barrier",
-    "description": "Wakes up waves associated with a given named barrier. Note, This op does not release waves waiting\n    at the barrier. It just signal other waves in the same work-group waiting on the indicated named barrier\n    to wake up.\n    Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Wake up waves waiting on a named barrier.\n    rocdl.s.wakeup.barrier %ptr : !llvm.ptr<3>\n    ```",
+    "description": "Wakes up waves associated with a given named barrier. Note, This op does not release waves waiting\n    at the barrier. It just signal other waves in the same work-group waiting on the indicated named barrier\n    to wake up.\n    Available on gfx1250+.\n\n    Example:\n    ```mlir\n    // Wake up waves waiting on a named barrier.\n    rocdl.s.wakeup.barrier %ptr : !llvm.ptr<15>\n    ```",
     "operands": [
-      { "name": "ptr", "type": "ROCDLBufferLDS" }
+      { "name": "ptr", "type": "ROCDLBarrier" }
     ],
     "assemblyFormat": "$ptr attr-dict `:` qualified(type($ptr))"
   },
@@ -111373,7 +111461,7 @@
       { "name": "fastest_varying_pattern", "type": "OptionalAttr<DenseI64ArrayAttr>" },
       { "name": "vectorize_reductions", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$target $vector_sizes\n          (`fastest_varying_pattern` `=` $fastest_varying_pattern^)? \n          (`vectorize_reductions` `=` $vectorize_reductions^)? \n          attr-dict `:` type($target)"
+    "assemblyFormat": "$target $vector_sizes\n          (`fastest_varying_pattern` `=` $fastest_varying_pattern^)? \n          (`vectorize_reductions` `=` $vectorize_reductions^)? attr-dict `:` type($target)"
   },
   {
     "name": "transform.alternatives",
@@ -111425,7 +111513,7 @@
       { "name": "patterns", "type": "MaxSizedRegion<1>" },
       { "name": "default_type_converter_region", "type": "VariadicRegion<MaxSizedRegion<1>>" }
     ],
-    "assemblyFormat": "`to` $target $patterns\n    (`with` `type_converter` $default_type_converter_region^)?\n    attr-dict `:` type($target)"
+    "assemblyFormat": "`to` $target $patterns\n    (`with` `type_converter` $default_type_converter_region^)? prop-dict attr-dict `:` type($target)"
   },
   {
     "name": "transform.apply_conversion_patterns.dialect_to_llvm",
@@ -111451,7 +111539,7 @@
     "attributes": [
       { "name": "benefit", "type": "DefaultValuedAttr<I16Attr, 1>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "oilist(`benefit` `=` $benefit) attr-dict"
   },
   {
     "name": "transform.apply_conversion_patterns.gpu.gpu_to_rocdl",
@@ -111468,7 +111556,7 @@
   },
   {
     "name": "transform.apply_conversion_patterns.memref.memref_to_llvm_type_converter",
-    "description": "This operation provides an \"LLVMTypeConverter\" that lowers memref types to\n    LLVM types.\n\n    The type converter can be customized as follows:\n    - `use_aligned_alloc`: Use aligned_alloc in place of malloc for heap\n      allocations.\n    - `index_bitwidth`: Bitwidth of the index type, \"0\" indicates the size of a\n      machine word.\n    - `use_generic_functions`: Use generic allocation and deallocation functions\n      instead of the classic \"malloc\", \"aligned_alloc\" and \"free\" functions.\n    // TODO: the following two options don't really make sense for \n    // memref_to_llvm_type_converter specifically.\n    // We should have a single to_llvm_type_converter.\n    - `use_bare_ptr_call_conv`: Replace FuncOp's MemRef arguments with bare \n      pointers to the MemRef element types.\n    - `data-layout`: String description (LLVM format) of the data layout that is\n      expected on the produced module.",
+    "description": "This operation provides an \"LLVMTypeConverter\" that lowers memref types to\n    LLVM types.\n\n    The type converter can be customized as follows:\n    - `use_aligned_alloc`: Use aligned_alloc in place of malloc for heap\n      allocations.\n    - `index_bitwidth`: Bitwidth of the index type, \"0\" indicates the size of a\n      machine word.\n    - `use_generic_functions`: Use generic allocation and deallocation functions\n      instead of the classic \"malloc\", \"aligned_alloc\" and \"free\" functions.\n    // TODO: the following two options don't really make sense for\n    // memref_to_llvm_type_converter specifically.\n    // We should have a single to_llvm_type_converter.\n    - `use_bare_ptr_call_conv`: Replace FuncOp's MemRef arguments with bare\n      pointers to the MemRef element types.\n    - `data-layout`: String description (LLVM format) of the data layout that is\n      expected on the produced module.",
     "attributes": [
       { "name": "use_aligned_alloc", "type": "DefaultValuedOptionalAttr<BoolAttr, false>" },
       { "name": "index_bitwidth", "type": "DefaultValuedOptionalAttr<I64Attr, 64>" },
@@ -111476,7 +111564,7 @@
       { "name": "use_bare_ptr_call_conv", "type": "DefaultValuedOptionalAttr<BoolAttr, false>" },
       { "name": "data_layout", "type": "OptionalAttr<StrAttr>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "custom<LLVMTypeConverterOptions>(\n      $use_aligned_alloc,\n      $index_bitwidth,\n      $use_generic_functions,\n      $use_bare_ptr_call_conv,\n      $data_layout) attr-dict"
   },
   {
     "name": "transform.apply_conversion_patterns.nvgpu.nvgpu_to_nvvm",
@@ -111509,7 +111597,7 @@
       { "name": "force_32bit_vector_indices", "type": "DefaultValuedAttr<BoolAttr, true>" },
       { "name": "use_vector_alignment", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "oilist(`reassociate_fp_reductions` `=` $reassociate_fp_reductions | `force_32bit_vector_indices` `=` $force_32bit_vector_indices | `use_vector_alignment` `=` $use_vector_alignment) attr-dict"
   },
   {
     "name": "transform.apply_cse",
@@ -111553,7 +111641,7 @@
     "regions": [
       { "name": "patterns", "type": "MaxSizedRegion<1>" }
     ],
-    "assemblyFormat": "`to` $target $patterns attr-dict `:` type($target)"
+    "assemblyFormat": "`to` $target $patterns oilist(`apply_cse` $apply_cse | `max_iterations` `=` $max_iterations | `max_num_rewrites` `=` $max_num_rewrites) attr-dict `:` type($target)"
   },
   {
     "name": "transform.apply_patterns.arm_neon.vector_contract_to_bfmmla",
@@ -111718,7 +111806,7 @@
     "attributes": [
       { "name": "poison_padding", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "oilist(`poison_padding` `=` $poison_padding) attr-dict"
   },
   {
     "name": "transform.apply_patterns.linalg.decompose_pack_unpack",
@@ -111751,7 +111839,7 @@
     "attributes": [
       { "name": "fold_single_use_only", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "oilist(`fold_single_use_only` `=` $fold_single_use_only) attr-dict"
   },
   {
     "name": "transform.apply_patterns.linalg.fold_unit_extent_dims_via_reshapes",
@@ -111765,7 +111853,7 @@
   },
   {
     "name": "transform.apply_patterns.linalg.pad_vectorization",
-    "description": "Apply patterns that vectorize tensor.pad.\n\n    These patterns rewrite tensor.pad Ops using vector.transfer_read and\n    vector.transfer_write operations. This is done either by:\n      1. Folding tensor.pad with an existing vector.transfer_read /\n      vector.transfer_write Op (generated prior to running these patterns). \n      2. Rewriting it (when matched together with q tensor.insert_slice\n      consumer Op) as a vector.transfer_read + vector.transfer_write pair.\n\n    In both cases, these patterns look at producers and consumers for the\n    matched tensor.pad Op to find opportunities for vectorization.",
+    "description": "Apply patterns that vectorize tensor.pad.\n\n    These patterns rewrite tensor.pad Ops using vector.transfer_read and\n    vector.transfer_write operations. This is done either by:\n      1. Folding tensor.pad with an existing vector.transfer_read /\n      vector.transfer_write Op (generated prior to running these patterns).\n      2. Rewriting it (when matched together with q tensor.insert_slice\n      consumer Op) as a vector.transfer_read + vector.transfer_write pair.\n\n    In both cases, these patterns look at producers and consumers for the\n    matched tensor.pad Op to find opportunities for vectorization.",
     "assemblyFormat": "attr-dict"
   },
   {
@@ -111842,7 +111930,7 @@
     "attributes": [
       { "name": "fold_single_use_only", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "oilist(`fold_single_use_only` `=` $fold_single_use_only) attr-dict"
   },
   {
     "name": "transform.apply_patterns.tensor.fold_tensor_subset_ops",
@@ -112008,7 +112096,7 @@
       { "name": "lowering_strategy", "type": "DefaultValuedAttr<VectorTransposeLoweringAttr{eltwise|llvmintr|shuffle_1d|shuffle_16x16}, vector::VectorTransposeLowering::EltWise>" },
       { "name": "avx2_lowering_strategy", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "oilist (\n      `lowering_strategy` `=` $lowering_strategy\n      | `avx2_lowering_strategy` `=` $avx2_lowering_strategy\n    )\n    attr-dict"
+    "assemblyFormat": "oilist (\n      `lowering_strategy` `=` $lowering_strategy\n      | `avx2_lowering_strategy` `=` $avx2_lowering_strategy\n    ) attr-dict"
   },
   {
     "name": "transform.apply_patterns.vector.materialize_masks",
@@ -112097,7 +112185,7 @@
       { "name": "max_transfer_rank", "type": "DefaultValuedAttr<I64Attr, 1>" },
       { "name": "full_unroll", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "oilist (\n        `max_transfer_rank` `=` $max_transfer_rank\n      | `full_unroll` `=` $full_unroll\n    )\n    attr-dict"
+    "assemblyFormat": "oilist (\n        `max_transfer_rank` `=` $max_transfer_rank\n      | `full_unroll` `=` $full_unroll\n    ) attr-dict"
   },
   {
     "name": "transform.apply_patterns.vector.unroll_from_elements",
@@ -112233,7 +112321,7 @@
       { "name": "check_parallel_regions", "type": "DefaultValuedAttr<BoolAttr, true>" },
       { "name": "memcpy_op", "type": "DefaultValuedAttr<StrAttr, \"memref.copy\">" }
     ],
-    "assemblyFormat": "(`layout` `{` $function_boundary_type_conversion^ `}`)?\n    $target attr-dict `:` functional-type($target, results)"
+    "assemblyFormat": "(`layout` `{` $function_boundary_type_conversion^ `}`)?\n    $target prop-dict attr-dict `:` functional-type($target, results)"
   },
   {
     "name": "transform.cast",
@@ -112337,7 +112425,7 @@
       { "name": "matchers", "type": "TypedArrayAttrBase<SymbolRefAttr>" },
       { "name": "actions", "type": "TypedArrayAttrBase<SymbolRefAttr>" }
     ],
-    "assemblyFormat": "oilist( `restrict_root` $restrict_root\n          | `flatten_results` $flatten_results\n          )\n    `in`\n    $root (`,` $forwarded_inputs^)?\n    custom<ForeachMatchSymbols>($matchers, $actions)\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "oilist( `restrict_root` $restrict_root\n          | `flatten_results` $flatten_results\n          )\n    `in`\n    $root (`,` $forwarded_inputs^)?\n    custom<ForeachMatchSymbols>($matchers, $actions) attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.func.cast_and_call",
@@ -112395,7 +112483,7 @@
       { "name": "results_interchange", "type": "DenseI32ArrayAttr" },
       { "name": "adjust_func_calls", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$function_name\n    `args_interchange` `=` $args_interchange\n    `results_interchange` `=` $results_interchange\n    `at` $module attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$function_name\n    `args_interchange` `=` $args_interchange\n    `results_interchange` `=` $results_interchange\n    `at` $module oilist(`adjust_func_calls` $adjust_func_calls) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.get_consumers_of_result",
@@ -112458,7 +112546,7 @@
       { "name": "deduplicate", "type": "UnitAttr" },
       { "name": "nth_parent", "type": "DefaultValuedAttr<ConfinedAttr<I64Attr, [ IntPositive ]>, 1>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.get_producer_of_operand",
@@ -112520,7 +112608,7 @@
       { "name": "grid_dims", "type": "DefaultValuedOptionalAttr<DenseI64ArrayAttr, {}>" },
       { "name": "generate_gpu_launch", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target\n    (`generate_gpu_launch` $generate_gpu_launch^)?\n    (`grid_dims` `=` $grid_dims^)?\n    attr-dict\n    `:` functional-type($target, $result)"
+    "assemblyFormat": "$target\n    (`generate_gpu_launch` $generate_gpu_launch^)?\n    (`grid_dims` `=` $grid_dims^)? attr-dict\n    `:` functional-type($target, $result)"
   },
   {
     "name": "transform.gpu.map_nested_forall_to_threads",
@@ -112536,7 +112624,7 @@
       { "name": "sync_after_distribute", "type": "DefaultValuedAttr<BoolAttr, true>" },
       { "name": "warp_size", "type": "DefaultValuedAttr<I64Attr, 32>" }
     ],
-    "assemblyFormat": "$target\n    `block_dims` `=` $block_dims\n    (`sync_after_distribute` `=` $sync_after_distribute^)?\n    (`warp_size` `=` $warp_size^)?\n    attr-dict\n    `:` functional-type($target, $result)"
+    "assemblyFormat": "$target\n    `block_dims` `=` $block_dims\n    (`sync_after_distribute` `=` $sync_after_distribute^)?\n    (`warp_size` `=` $warp_size^)? attr-dict\n    `:` functional-type($target, $result)"
   },
   {
     "name": "transform.include",
@@ -112554,7 +112642,7 @@
       { "name": "arg_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
       { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" }
     ],
-    "assemblyFormat": "$target `failures` `(` $failure_propagation_mode `)``(` $operands `)` attr-dict `:` functional-type($operands, $results)"
+    "assemblyFormat": "$target `failures` `(` $failure_propagation_mode `)``(` $operands `)` oilist(`arg_attrs` `=` $arg_attrs | `res_attrs` `=` $res_attrs) attr-dict `:` functional-type($operands, $results)"
   },
   {
     "name": "transform.irdl.collect_matching",
@@ -113428,7 +113516,7 @@
     "attributes": [
       { "name": "func_name", "type": "StrAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target `func_name` `=` $func_name attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.loop.parallel_for_to_nested_fors",
@@ -113457,7 +113545,7 @@
       { "name": "peel_front", "type": "DefaultValuedAttr<BoolAttr, false>" },
       { "name": "fail_if_already_divisible", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`peel_front` `=` $peel_front | `fail_if_already_divisible` `=` $fail_if_already_divisible) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.loop.pipeline",
@@ -113473,7 +113561,7 @@
       { "name": "iteration_interval", "type": "DefaultValuedAttr<I64Attr, 1>" },
       { "name": "read_latency", "type": "DefaultValuedAttr<I64Attr, 10>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`iteration_interval` `=` $iteration_interval | `read_latency` `=` $read_latency) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.loop.promote_if_one_iteration",
@@ -113494,7 +113582,7 @@
     "attributes": [
       { "name": "factor", "type": "ConfinedAttr<I64Attr, [IntPositive]>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` type($target)"
+    "assemblyFormat": "$target `factor` `=` $factor attr-dict `:` type($target)"
   },
   {
     "name": "transform.loop.unroll_and_jam",
@@ -113506,7 +113594,7 @@
     "attributes": [
       { "name": "factor", "type": "ConfinedAttr<I64Attr, [IntPositive]>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` type($target)"
+    "assemblyFormat": "$target `factor` `=` $factor attr-dict `:` type($target)"
   },
   {
     "name": "transform.loop.unroll_full",
@@ -113597,12 +113685,12 @@
       { "name": "elementwise", "type": "UnitAttr" },
       { "name": "contraction", "type": "OptionalAttr<TypedArrayAttrBase<StrAttr>>" }
     ],
-    "assemblyFormat": "$operand_handle attr-dict `:` type($operand_handle)"
+    "assemblyFormat": "$operand_handle oilist(`reduction_position` `=` $reduction_position | `passthrough` $passthrough | `elementwise` $elementwise | `contraction` `=` $contraction) attr-dict `:` type($operand_handle)"
   },
   {
     "name": "transform.match.structured.classify_contraction_dims",
     "summary": "Checks if an operation has contraction-like dimensions and returns them",
-    "description": "Checks if the structured payload op has contraction-like dimensions as\n    follows:\n\n      C(batch, m, n) += A(batch, m, k) * B(batch, k, n)\n\n    That is:\n    \n      - 'batch' are parallel dimensions used in inputs and result;\n      - 'm' are parallel dimensions used in the LHS and result;\n      - 'n' are parallel dimensions used in rhe RHS and result;\n      - 'k' are reduction dimensions present only in LHS and RHS.\n\n    Note that this doesn't check the operation in the body.#### Return modes\n\n    Succeeds if the operation has the contraction-like dimensions, produces a\n    silenceable failure otherwise.",
+    "description": "Checks if the structured payload op has contraction-like dimensions as\n    follows:\n\n      C(batch, m, n) += A(batch, m, k) * B(batch, k, n)\n\n    That is:\n\n      - 'batch' are parallel dimensions used in inputs and result;\n      - 'm' are parallel dimensions used in the LHS and result;\n      - 'n' are parallel dimensions used in rhe RHS and result;\n      - 'k' are reduction dimensions present only in LHS and RHS.\n\n    Note that this doesn't check the operation in the body.#### Return modes\n\n    Succeeds if the operation has the contraction-like dimensions, produces a\n    silenceable failure otherwise.",
     "operands": [
       { "name": "operand_handle", "type": "TransformHandleTypeInterface" }
     ],
@@ -113650,7 +113738,7 @@
       { "name": "parallel", "type": "UnitAttr" },
       { "name": "reduction", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_dim_list, $is_inverted, $is_all)`]` attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
+    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_dim_list, $is_inverted, $is_all)`]` oilist(`parallel` $parallel | `reduction` $reduction) attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
   },
   {
     "name": "transform.match.structured.elemental_bitwidth",
@@ -113681,12 +113769,12 @@
       { "name": "permutation", "type": "UnitAttr" },
       { "name": "projected_permutation", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_position_list, $is_inverted, $is_all)`]` attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
+    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_position_list, $is_inverted, $is_all)`]` oilist(`permutation` $permutation | `projected_permutation` $projected_permutation) attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
   },
   {
     "name": "transform.match.structured.input",
     "summary": "Captures input operand(s) of a structured operation",
-    "description": "Produces a transform dialect value depending on the result type:\n    \n      - If the result type is a value handle, it will be associated with the input\n        operand(s) of the payload operation associated with the operand handle.\n      - If the result type is an operation handle, it will be associated with the\n        operation defining the input operand(s) of the payload operation associated\n        with the operand handle.\n      - If the result type is an affine map parameter type, it will be associated\n        with the indexing map that corresponds to the input operand(s) of the\n        payload operation associated with the operand handle.\n\n    For example, given the following operation:\n\n    ```mlir\n    %arg1 = some.op\n    linalg.matmul ins(%arg1, %arg2 : ...) outs(%arg3 : ...)\n    ```\n\n    in case of a successful match for operand 0 this operation will return, for\n    each of the respective cases above:\n\n      - A handle to `%arg1` if the result is a value handle.\n      - A handle to `some.op` if the result is an operation handle.\n      - A parameter containing the LHS map of the matrix multiplication, i.e.\n        `affine_map<(d0, d1, d2) -> (d0, d2)>` if the result is an affine\n        map parameter.\n\n    The match succeeds if the conditions specified as attributes succeed.#### Return modes\n\n    Succeeds if all input indexes are in bounds, produces a silenceable failure\n    otherwise. Additionally, when the result is an operation handle, produces a\n    silenceable failure if the input specification defines more than one input\n    or if the operand is not an operation result.",
+    "description": "Produces a transform dialect value depending on the result type:\n\n      - If the result type is a value handle, it will be associated with the input\n        operand(s) of the payload operation associated with the operand handle.\n      - If the result type is an operation handle, it will be associated with the\n        operation defining the input operand(s) of the payload operation associated\n        with the operand handle.\n      - If the result type is an affine map parameter type, it will be associated\n        with the indexing map that corresponds to the input operand(s) of the\n        payload operation associated with the operand handle.\n\n    For example, given the following operation:\n\n    ```mlir\n    %arg1 = some.op\n    linalg.matmul ins(%arg1, %arg2 : ...) outs(%arg3 : ...)\n    ```\n\n    in case of a successful match for operand 0 this operation will return, for\n    each of the respective cases above:\n\n      - A handle to `%arg1` if the result is a value handle.\n      - A handle to `some.op` if the result is an operation handle.\n      - A parameter containing the LHS map of the matrix multiplication, i.e.\n        `affine_map<(d0, d1, d2) -> (d0, d2)>` if the result is an affine\n        map parameter.\n\n    The match succeeds if the conditions specified as attributes succeed.#### Return modes\n\n    Succeeds if all input indexes are in bounds, produces a silenceable failure\n    otherwise. Additionally, when the result is an operation handle, produces a\n    silenceable failure if the input specification defines more than one input\n    or if the operand is not an operation result.",
     "operands": [
       { "name": "operand_handle", "type": "TransformHandleTypeInterface" }
     ],
@@ -113700,7 +113788,7 @@
       { "name": "permutation", "type": "UnitAttr" },
       { "name": "projected_permutation", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_position_list, $is_inverted, $is_all)`]` attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
+    "assemblyFormat": "$operand_handle `[`custom<TransformMatchDims>($raw_position_list, $is_inverted, $is_all)`]` oilist(`permutation` $permutation | `projected_permutation` $projected_permutation) attr-dict `:` custom<SemiFunctionType>(type($operand_handle), type($result))"
   },
   {
     "name": "transform.match.structured.num_inits",
@@ -113808,7 +113896,7 @@
     "attributes": [
       { "name": "num_loops", "type": "I64Attr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type($target, $transformed)"
+    "assemblyFormat": "$target `num_loops` `=` $num_loops attr-dict `:` functional-type($target, $transformed)"
   },
   {
     "name": "transform.memref.multibuffer",
@@ -113824,7 +113912,7 @@
       { "name": "factor", "type": "ConfinedAttr<I64Attr, [IntPositive]>" },
       { "name": "skip_analysis", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.merge_handles",
@@ -113909,12 +113997,12 @@
     "attributes": [
       { "name": "bypass_l1", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`bypass_l1` $bypass_l1) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.nvgpu.pipeline_shared_memory_copies",
     "summary": "Applies software pipelining to a given loop with shared memory copies",
-    "description": "Applies software pipelining to a given scf.for loop. The pipelining\n    strategy will look for a load into shared memory and pipeline it to overlap\n    it with the rest of the loop.\n    \n    NOTE: It is user responsibility to ensure that there are no dependency\n    between `depth` iterations of the loop by using multi-buffering. It is\n    also user responsibility to ensure a sufficient amount of shared memory\n    is allocated to cover eventual writes by `depth-1` speculative\n    iterations.\n\n    `depth` will indicate how many stages the software pipeline should have.\n    `peel_epilogue` allows to force the epilogue to be peeled out instead of\n    potentially using predicated operations for the epilogue phase.\n\n    #### Return modes\n\n    Consumes the operand handle and produces a result handle pointing to the\n    loop, which may or may not have been pipelined. Produces a definite failure\n    if the loop pipeliner mutated the IR before failing to pipeline, in\n    particular if `peel_epilogue` is not set and the loop body doesn't support\n    predication. If failure propagation mode is set to \"propagate\", produces a\n    silenceable failure when pipelining preconditions, e.g., loop bound being\n    static, are not met or when the loop wasn't pipelined because due to the\n    lack of loads into shared memory. If the failure propagation mode is set\n    to \"suppress\" (default), succeeds in these case and associates the result\n    handle with the original loop.\n\n    TODO: the shared memory part and behavior specific to NVGPU should be\n    made orthogonal to pipelining so that `transform.loop.pipeline` becomes\n    usable here.",
+    "description": "Applies software pipelining to a given scf.for loop. The pipelining\n    strategy will look for a load into shared memory and pipeline it to overlap\n    it with the rest of the loop.\n\n    NOTE: It is user responsibility to ensure that there are no dependency\n    between `depth` iterations of the loop by using multi-buffering. It is\n    also user responsibility to ensure a sufficient amount of shared memory\n    is allocated to cover eventual writes by `depth-1` speculative\n    iterations.\n\n    `depth` will indicate how many stages the software pipeline should have.\n    `peel_epilogue` allows to force the epilogue to be peeled out instead of\n    potentially using predicated operations for the epilogue phase.\n\n    #### Return modes\n\n    Consumes the operand handle and produces a result handle pointing to the\n    loop, which may or may not have been pipelined. Produces a definite failure\n    if the loop pipeliner mutated the IR before failing to pipeline, in\n    particular if `peel_epilogue` is not set and the loop body doesn't support\n    predication. If failure propagation mode is set to \"propagate\", produces a\n    silenceable failure when pipelining preconditions, e.g., loop bound being\n    static, are not met or when the loop wasn't pipelined because due to the\n    lack of loads into shared memory. If the failure propagation mode is set\n    to \"suppress\" (default), succeeds in these case and associates the result\n    handle with the original loop.\n\n    TODO: the shared memory part and behavior specific to NVGPU should be\n    made orthogonal to pipelining so that `transform.loop.pipeline` becomes\n    usable here.",
     "operands": [
       { "name": "for_op", "type": "TransformHandleTypeInterface" }
     ],
@@ -113926,7 +114014,7 @@
       { "name": "peel_epilogue", "type": "UnitAttr" },
       { "name": "failure_propagation_mode", "type": "DefaultValuedAttr<FailurePropagationMode{propagate|suppress}, ::mlir::transform::FailurePropagationMode::Suppress>" }
     ],
-    "assemblyFormat": "`failures` `(` $failure_propagation_mode `)`\n    $for_op\n    attr-dict \n    `:` functional-type(operands, results)"
+    "assemblyFormat": "`failures` `(` $failure_propagation_mode `)`\n    $for_op `depth` `=` $depth oilist(`peel_epilogue` $peel_epilogue) attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.nvgpu.rewrite_copy_as_tma",
@@ -113966,7 +114054,7 @@
     "regions": [
       { "name": "body", "type": "AnyRegion" }
     ],
-    "assemblyFormat": "attr-dict-with-keyword regions"
+    "assemblyFormat": "`normal_forms` `=` $normal_forms attr-dict-with-keyword regions"
   },
   {
     "name": "transform.pdl_match",
@@ -113996,7 +114084,7 @@
       { "name": "use_local_scope", "type": "OptionalAttr<UnitAttr>" },
       { "name": "skip_regions", "type": "OptionalAttr<UnitAttr>" }
     ],
-    "assemblyFormat": "$target attr-dict (`:` type($target)^)?"
+    "assemblyFormat": "$target oilist(`name` `=` $name | `assume_verified` $assume_verified | `use_local_scope` $use_local_scope | `skip_regions` $skip_regions) attr-dict (`:` type($target)^)?"
   },
   {
     "name": "transform.replicate",
@@ -114023,7 +114111,7 @@
     "attributes": [
       { "name": "take_else_branch", "type": "OptionalAttr<UnitAttr>" }
     ],
-    "assemblyFormat": "$target\n      (`take_else_branch` $take_else_branch^)?\n      attr-dict\n       `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n      (`take_else_branch` $take_else_branch^)? attr-dict\n       `:` functional-type(operands, results)"
   },
   {
     "name": "transform.select",
@@ -114104,7 +114192,7 @@
       { "name": "fail_on_payload_too_small", "type": "DefaultValuedAttr<BoolAttr, true>" },
       { "name": "overflow_result", "type": "OptionalAttr<I64Attr>" }
     ],
-    "assemblyFormat": "$handle attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$handle oilist(`pass_through_empty_handle` `=` $pass_through_empty_handle | `fail_on_payload_too_small` `=` $fail_on_payload_too_small | `overflow_result` `=` $overflow_result) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.bufferize_to_allocation",
@@ -114123,7 +114211,7 @@
       { "name": "bufferize_destination_only", "type": "UnitAttr" },
       { "name": "emit_dealloc", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` type($target)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` type($target)"
   },
   {
     "name": "transform.structured.continuous_tile_sizes",
@@ -114139,7 +114227,7 @@
       { "name": "dimension", "type": "ConfinedAttr<I64Attr, [IntNonNegative]>" },
       { "name": "target_size", "type": "ConfinedAttr<I64Attr, [IntNonNegative]>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` custom<ContinuousTileSizeTypes>(type($target), type($tile_sizes), type($chunk_sizes))"
+    "assemblyFormat": "$target `dimension` `=` $dimension `target_size` `=` $target_size attr-dict `:` custom<ContinuousTileSizeTypes>(type($target), type($tile_sizes), type($chunk_sizes))"
   },
   {
     "name": "transform.structured.convert_conv2d_to_img2col",
@@ -114239,7 +114327,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$target oilist(\n      `tile_sizes` custom<PackedOrDynamicIndexList>($packed_tile_sizes,\n                                                    $tile_sizes,\n                                                    $static_tile_sizes) |\n      `interchange` custom<DynamicIndexList>($tile_interchange, $static_tile_interchange)\n    )\n    (`inner_tile_alignments` `=`\n        custom<InnerTileAlignmentArray>($inner_tile_alignments)^)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(\n      `tile_sizes` custom<PackedOrDynamicIndexList>($packed_tile_sizes,\n                                                    $tile_sizes,\n                                                    $static_tile_sizes) |\n      `interchange` custom<DynamicIndexList>($tile_interchange, $static_tile_interchange) |\n      `apply_cleanup` $apply_cleanup |\n      `use_forall` $use_forall\n    )\n    (`inner_tile_alignments` `=`\n        custom<InnerTileAlignmentArray>($inner_tile_alignments)^)?\n    attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.fuse_into_containing_op",
@@ -114267,7 +114355,7 @@
     "results": [
       { "name": "transformed", "type": "TransformHandleTypeInterface" }
     ],
-    "assemblyFormat": "$target attr-dict `:` \n      custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
+    "assemblyFormat": "$target attr-dict `:`\n      custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
   },
   {
     "name": "transform.structured.gpu.map_copy_to_threads",
@@ -114283,7 +114371,7 @@
       { "name": "total_num_threads", "type": "I64Attr" },
       { "name": "desired_bit_alignment", "type": "I64Attr" }
     ],
-    "assemblyFormat": "$target\n    `total_num_threads` `=` $total_num_threads\n    `desired_bit_alignment` `=` $desired_bit_alignment\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `total_num_threads` `=` $total_num_threads\n    `desired_bit_alignment` `=` $desired_bit_alignment attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.hoist_pad",
@@ -114298,7 +114386,7 @@
       { "name": "num_loops", "type": "I64Attr" },
       { "name": "transpose", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target\n    `by` $num_loops `loops`\n    (`,` `transpose` `by` $transpose^)?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `by` $num_loops `loops`\n    (`,` `transpose` `by` $transpose^)? attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.hoist_pad.build_packing_loop_nest",
@@ -114313,7 +114401,7 @@
     "attributes": [
       { "name": "transpose", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target\n    `above` $loop\n    (`,` `transpose` `by` $transpose^)?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `above` $loop\n    (`,` `transpose` `by` $transpose^)? attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.hoist_redundant_vector_broadcasts",
@@ -114338,7 +114426,7 @@
     "attributes": [
       { "name": "verify_non_zero_trip", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`verify_non_zero_trip` $verify_non_zero_trip) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.insert_slice_to_copy",
@@ -114390,7 +114478,7 @@
     "attributes": [
       { "name": "lowerPadLikeWithInsertSlice", "type": "DefaultValuedAttr<BoolAttr, true>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`lowerPadLikeWithInsertSlice` `=` $lowerPadLikeWithInsertSlice) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.lower_unpack",
@@ -114408,7 +114496,7 @@
     "attributes": [
       { "name": "lowerUnpadLikeWithExtractSlice", "type": "DefaultValuedAttr<BoolAttr, true>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target oilist(`lowerUnpadLikeWithExtractSlice` `=` $lowerUnpadLikeWithExtractSlice) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.match",
@@ -114444,7 +114532,7 @@
       { "name": "target_size", "type": "I64Attr" },
       { "name": "divisor", "type": "DefaultValuedAttr<I64Attr, 1>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` custom<MultitileSizesTypes>(type($target), type($low_size), type($high_size), type($split_point))"
+    "assemblyFormat": "$target `dimension` `=` $dimension `target_size` `=` $target_size oilist(`divisor` `=` $divisor) attr-dict `:` custom<MultitileSizesTypes>(type($target), type($low_size), type($high_size), type($split_point))"
   },
   {
     "name": "transform.structured.pack",
@@ -114459,7 +114547,7 @@
     "attributes": [
       { "name": "static_packed_sizes", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target\n    `packed_sizes` `=` custom<DynamicIndexList>($packed_sizes,\n                                                $static_packed_sizes)\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `packed_sizes` `=` custom<DynamicIndexList>($packed_sizes,\n                                                $static_packed_sizes) attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.pack_greedily",
@@ -114476,7 +114564,7 @@
       { "name": "matmul_padded_sizes_next_multiple_of", "type": "ConfinedAttr<DefaultValuedAttr<DenseI64ArrayAttr, {}>, [Attr<Or<[ DenseArrayCount < 0 > . predicate, DenseArrayCount < 3 > . predicate ]>, with 0 or 3 elements>]>" },
       { "name": "matmul_inner_dims_order", "type": "ConfinedAttr<DefaultValuedAttr<DenseI64ArrayAttr, {}>, [DenseArrayCount<3>]>" }
     ],
-    "assemblyFormat": "$target\n    oilist(\n      `matmul_packed_sizes` `=` custom<DynamicIndexList>($matmul_packed_sizes,\n                                                         $static_matmul_packed_sizes)\n      (`matmul_padded_sizes_next_multiple_of` `=`\n        $matmul_padded_sizes_next_multiple_of^)?\n      `matmul_inner_dims_order` `=` $matmul_inner_dims_order\n    )\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    oilist(\n      `matmul_packed_sizes` `=` custom<DynamicIndexList>($matmul_packed_sizes,\n                                                         $static_matmul_packed_sizes)\n      (`matmul_padded_sizes_next_multiple_of` `=`\n        $matmul_padded_sizes_next_multiple_of^)?\n      `matmul_inner_dims_order` `=` $matmul_inner_dims_order\n    ) attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.pack_transpose",
@@ -114494,7 +114582,7 @@
       { "name": "outer_perm", "type": "DefaultValuedOptionalAttr<DenseI64ArrayAttr, {}>" },
       { "name": "inner_perm", "type": "DefaultValuedOptionalAttr<DenseI64ArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target_pack_or_un_pack_op\n    `with_compute_op` `(` $target_linalg_op `)`\n    (`outer_perm` `=` $outer_perm^ )?\n    (`inner_perm` `=` $inner_perm^ )?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target_pack_or_un_pack_op\n    `with_compute_op` `(` $target_linalg_op `)`\n    (`outer_perm` `=` $outer_perm^ )?\n    (`inner_perm` `=` $inner_perm^ )? attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.pad",
@@ -114517,11 +114605,11 @@
       { "name": "copy_back_op", "type": "DefaultValuedAttr<StrAttr, ::mlir::bufferization::MaterializeInDestinationOp::getOperationName()>" },
       { "name": "use_prescribed_tensor_shapes", "type": "DefaultValuedAttr<UnitAttr, false>" }
     ],
-    "assemblyFormat": "$target \n    (`pad_to_multiple_of` custom<DynamicIndexList>($pad_to_multiple_of, $static_pad_to_multiple_of)^)?\n    (`use_prescribed_tensor_shapes` $use_prescribed_tensor_shapes^)?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    (`pad_to_multiple_of` custom<DynamicIndexList>($pad_to_multiple_of, $static_pad_to_multiple_of)^)?\n    (`use_prescribed_tensor_shapes` $use_prescribed_tensor_shapes^)? prop-dict attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.pad_tiling_interface",
-    "description": "Pads the **iteration domain** of the operations pointed to by the target\n    handle using the options provided as operation attributes. Padding the\n    iteration domain induces a padding of the operands that is consistent\n    across the op semantics and, unlike for simple elementwise ops, may not be\n    trivially deducible or specifiable on operands only (e.g. convolutions).\n    Currently, only a limited set of projected permutation maps are supported.\n    \n    The specification of `padding_sizes` follows that of `tile_sizes` during\n    tiling: the value \"0\" on a particular iterator encode \"no padding\". Like in\n    the case of tiling, an automatic completion by 0 to the operation rank\n    occurs.\n    \n    This transformation returns a handle to the padded operation and to the\n    padding operation (\"tensor.pad\").\n\n    TODO: in the future this should be moved out of a specific Linalg\n    implementation file and into a more general \"Structured\" file.\n\n    #### Return modes\n\n    This operation ignores non-IndexingMapOpInterface ops and drops them in the\n    return. In the future, this operation will support all TilingInterfaceOps\n    for which the contract between iteration domain and operands can be \n    reified.    \n\n    This operation may produce a definite failure if the padding fails for any\n    reason.\n\n    If all the operations referred to by the `target` handle pad properly, the\n    transform succeeds. Otherwise the transform produces a silenceable failure.\n    The return handle points to only the subset of successfully produced\n    padded operations, which can be empty.",
+    "description": "Pads the **iteration domain** of the operations pointed to by the target\n    handle using the options provided as operation attributes. Padding the\n    iteration domain induces a padding of the operands that is consistent\n    across the op semantics and, unlike for simple elementwise ops, may not be\n    trivially deducible or specifiable on operands only (e.g. convolutions).\n    Currently, only a limited set of projected permutation maps are supported.\n\n    The specification of `padding_sizes` follows that of `tile_sizes` during\n    tiling: the value \"0\" on a particular iterator encode \"no padding\". Like in\n    the case of tiling, an automatic completion by 0 to the operation rank\n    occurs.\n\n    This transformation returns a handle to the padded operation and to the\n    padding operation (\"tensor.pad\").\n\n    TODO: in the future this should be moved out of a specific Linalg\n    implementation file and into a more general \"Structured\" file.\n\n    #### Return modes\n\n    This operation ignores non-IndexingMapOpInterface ops and drops them in the\n    return. In the future, this operation will support all TilingInterfaceOps\n    for which the contract between iteration domain and operands can be\n    reified.\n\n    This operation may produce a definite failure if the padding fails for any\n    reason.\n\n    If all the operations referred to by the `target` handle pad properly, the\n    transform succeeds. Otherwise the transform produces a silenceable failure.\n    The return handle points to only the subset of successfully produced\n    padded operations, which can be empty.",
     "operands": [
       { "name": "target", "type": "TransformHandleTypeInterface" },
       { "name": "padding_sizes", "type": "Variadic<TransformAnyParamTypeOrAnyHandle>" }
@@ -114535,7 +114623,7 @@
       { "name": "static_padding_sizes", "type": "DefaultValuedOptionalAttr<DenseI64ArrayAttr, {}>" },
       { "name": "pad_to_multiple_of", "type": "DefaultValuedAttr<UnitAttr, false>" }
     ],
-    "assemblyFormat": "$target\n    `to`\n    (`padding_sizes` custom<DynamicIndexList>($padding_sizes, $static_padding_sizes)^)?\n    (`pad_to_multiple_of` $pad_to_multiple_of^)?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `to`\n    (`padding_sizes` custom<DynamicIndexList>($padding_sizes, $static_padding_sizes)^)?\n    (`pad_to_multiple_of` $pad_to_multiple_of^)? oilist(`padding_values` `=` $padding_values) attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.promote",
@@ -114556,7 +114644,7 @@
       { "name": "mapping", "type": "OptionalAttr<TypedArrayAttrBase<AnyAttrOf<[ DeviceMappingAttrInterface, DeviceMaskingAttrInterface ]>>>" },
       { "name": "alignment", "type": "OptionalAttr<I64Attr>" }
     ],
-    "assemblyFormat": "$target attr-dict `:`\n    custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
+    "assemblyFormat": "$target prop-dict attr-dict `:`\n    custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
   },
   {
     "name": "transform.structured.promote_tensor",
@@ -114627,7 +114715,7 @@
     "attributes": [
       { "name": "emit_category", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` \n      custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
+    "assemblyFormat": "$target oilist(`emit_category` `=` $emit_category) attr-dict `:`\n      custom<SemiFunctionType>(type($target), type($transformed), \"false\")"
   },
   {
     "name": "transform.structured.split",
@@ -114665,7 +114753,7 @@
       { "name": "use_scaling_algorithm", "type": "UnitAttr" },
       { "name": "use_alloc", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:`functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:`functional-type(operands, results)"
   },
   {
     "name": "transform.structured.tile_reduction_using_for",
@@ -114683,7 +114771,7 @@
       { "name": "reduction_dims", "type": "DefaultValuedAttr<TypedArrayAttrBase<I64Attr>, {}>" },
       { "name": "tile_sizes", "type": "DefaultValuedAttr<TypedArrayAttrBase<I64Attr>, {}>" }
     ],
-    "assemblyFormat": "$target\n    (`reduction_dims` `=` $reduction_dims^)?\n    `by` `tile_sizes` `=` $tile_sizes\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    (`reduction_dims` `=` $reduction_dims^)?\n    `by` `tile_sizes` `=` $tile_sizes attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.tile_reduction_using_forall",
@@ -114703,7 +114791,7 @@
       { "name": "tile_sizes", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" },
       { "name": "mapping", "type": "OptionalAttr<TypedArrayAttrBase<AnyAttrOf<[ DeviceMappingAttrInterface, DeviceMaskingAttrInterface ]>>>" }
     ],
-    "assemblyFormat": "$target\n    (`reduction_dims` `=` $reduction_dims^)?\n    `by`\n    (`num_threads` `=` $num_threads^)?\n    (`tile_sizes` `=` $tile_sizes^)?\n    (`mapping` `=` $mapping^)?\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    (`reduction_dims` `=` $reduction_dims^)?\n    `by`\n    (`num_threads` `=` $num_threads^)?\n    (`tile_sizes` `=` $tile_sizes^)?\n    (`mapping` `=` $mapping^)? attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.structured.tile_using_for",
@@ -114777,7 +114865,7 @@
     "attributes": [
       { "name": "inputToTranspose", "type": "DefaultValuedAttr<TransposeMatmulInput{lhs|rhs}, TransposeMatmulInput::lhs>" }
     ],
-    "assemblyFormat": "$target (`<` $inputToTranspose^ `>`)?\n    attr-dict `:` functional-type($target, results)"
+    "assemblyFormat": "$target (`<` $inputToTranspose^ `>`)? attr-dict `:` functional-type($target, results)"
   },
   {
     "name": "transform.structured.vectorize",
@@ -114793,7 +114881,7 @@
       { "name": "create_named_contraction", "type": "OptionalAttr<UnitAttr>" },
       { "name": "scalable_sizes", "type": "DefaultValuedOptionalAttr<DenseBoolArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target oilist(\n      `vector_sizes` custom<DynamicIndexList>(\n        $vector_sizes,\n        $static_vector_sizes,\n        $scalable_sizes))\n    attr-dict\n    `:` type($target)(`,`type($vector_sizes)^)?"
+    "assemblyFormat": "$target oilist(\n      `vector_sizes` custom<DynamicIndexList>(\n        $vector_sizes,\n        $static_vector_sizes,\n        $scalable_sizes) |\n      `vectorize_nd_extract` $vectorize_nd_extract |\n      `assume_dynamic_dims_match_vec_sizes` $assume_dynamic_dims_match_vec_sizes |\n      `create_named_contraction` $create_named_contraction) attr-dict\n    `:` type($target)(`,`type($vector_sizes)^)?"
   },
   {
     "name": "transform.structured.vectorize_children_and_apply_patterns",
@@ -114812,7 +114900,7 @@
       { "name": "disable_multi_reduction_to_contract_patterns", "type": "UnitAttr" },
       { "name": "disable_transfer_permutation_map_lowering_patterns", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target attr-dict `:`functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:`functional-type(operands, results)"
   },
   {
     "name": "transform.structured.winograd_conv2d",
@@ -114826,7 +114914,7 @@
     "attributes": [
       { "name": "fmr", "type": "WinogradConv2DFmr{F_2_3|F_4_3|F_2_5}" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type($target, results)"
+    "assemblyFormat": "$target `fmr` `(` $fmr `)` attr-dict `:` functional-type($target, results)"
   },
   {
     "name": "transform.tensor.make_loop_independent",
@@ -114840,7 +114928,7 @@
     "attributes": [
       { "name": "num_loops", "type": "I64Attr" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type($target, $transformed)"
+    "assemblyFormat": "$target `num_loops` `=` $num_loops attr-dict `:` functional-type($target, $transformed)"
   },
   {
     "name": "transform.test_add_test_extension",
@@ -114884,7 +114972,7 @@
     "attributes": [
       { "name": "allow_repeated_handles", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$operand (`,` $second_operand^)? attr-dict `:` type($operand)(`,` type($second_operand)^)?"
+    "assemblyFormat": "$operand (`,` $second_operand^)? oilist(`allow_repeated_handles` $allow_repeated_handles) attr-dict `:` type($operand)(`,` type($second_operand)^)?"
   },
   {
     "name": "transform.test_consume_operand_each",
@@ -114935,7 +115023,7 @@
     "attributes": [
       { "name": "fail_to_verify", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$args attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$args oilist(`fail_to_verify` $fail_to_verify) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test_emit_remark_and_erase_operand",
@@ -114946,7 +115034,7 @@
       { "name": "remark", "type": "StrAttr" },
       { "name": "fail_after_erase", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target `,` $remark attr-dict `:` type($target)"
+    "assemblyFormat": "$target `,` $remark oilist(`fail_after_erase` $fail_after_erase) attr-dict `:` type($target)"
   },
   {
     "name": "transform.test_initializer_extension",
@@ -115060,7 +115148,7 @@
       { "name": "first_result_is_null", "type": "UnitAttr" },
       { "name": "second_result_is_handle", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$in attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$in oilist(`first_result_is_param` $first_result_is_param | `first_result_is_null` $first_result_is_null | `second_result_is_handle` $second_result_is_handle) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test_produce_value_handle_to_argument_of_parent_block",
@@ -115142,7 +115230,7 @@
       { "name": "has_result_effect", "type": "UnitAttr" },
       { "name": "modifies_payload", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$in attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$in oilist(`has_operand_effect` $has_operand_effect | `has_result_effect` $has_result_effect | `modifies_payload` $modifies_payload) attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test_reverse_payload_ops",
@@ -115219,11 +115307,11 @@
       { "name": "tile_interchange", "type": "DefaultValuedAttr<TypedArrayAttrBase<I64Attr>, {}>" },
       { "name": "use_forall", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$target ($tile_sizes^)? (`interchange` $tile_interchange^)?\n    (`use_forall` $use_forall^)? attr-dict \n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target ($tile_sizes^)? (`interchange` $tile_interchange^)?\n    (`use_forall` $use_forall^)? attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test.fuse_consumer",
-    "description": "For the `consumer` that uses the result of the outer-most loop of a loop nest passed in \n    as `loops` (that are typically generated through tiling), fuse the consumer into the\n    loop.\n\n    Returns a handle to the consumer operation after fusion and the loops that might be\n    modified.\n\n    The optional `inner_tile_alignments` array is supplied to the SCF driver as a\n    constant `scf::InnerTileAlignmentFnTy` control function (returning it for\n    every op, see `InnerTileAlignment`).",
+    "description": "For the `consumer` that uses the result of the outer-most loop of a loop nest passed in\n    as `loops` (that are typically generated through tiling), fuse the consumer into the\n    loop.\n\n    Returns a handle to the consumer operation after fusion and the loops that might be\n    modified.\n\n    The optional `inner_tile_alignments` array is supplied to the SCF driver as a\n    constant `scf::InnerTileAlignmentFnTy` control function (returning it for\n    every op, see `InnerTileAlignment`).",
     "operands": [
       { "name": "consumer", "type": "TransformHandleTypeInterface" },
       { "name": "loops", "type": "Variadic<TransformHandleTypeInterface>" }
@@ -115254,7 +115342,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$targets `in` `(` $loops `)`\n    (`num_consumer_to_fuse` `=` $num_consumer_to_fuse^)? \n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$targets `in` `(` $loops `)`\n    (`num_consumer_to_fuse` `=` $num_consumer_to_fuse^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test.fuse_using_forall",
@@ -115271,7 +115359,7 @@
       { "name": "interchange", "type": "DefaultValuedOptionalAttr<TypedArrayAttrBase<I64Attr>, {}>" },
       { "name": "mapping", "type": "OptionalAttr<TypedArrayAttrBase<AnyAttrOf<[ DeviceMappingAttrInterface, DeviceMaskingAttrInterface ]>>>" }
     ],
-    "assemblyFormat": "$root_op ($tile_sizes^)? (`interchange` $interchange^)?\n    (`mapping` `=` $mapping^)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$root_op ($tile_sizes^)? (`interchange` $interchange^)?\n    (`mapping` `=` $mapping^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test.make_composed_folded_affine_apply",
@@ -115333,7 +115421,7 @@
       { "name": "tile_sizes", "type": "DefaultValuedAttr<TypedArrayAttrBase<I64Attr>, {}>" },
       { "name": "mapping", "type": "OptionalAttr<TypedArrayAttrBase<AnyAttrOf<[ DeviceMappingAttrInterface, DeviceMaskingAttrInterface ]>>>" }
     ],
-    "assemblyFormat": "$root_op (`reduction_dims` `=` $reduction_dims^)?\n    (`tile_sizes` `=` $tile_sizes^)? (`mapping` `=` $mapping^)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$root_op (`reduction_dims` `=` $reduction_dims^)?\n    (`tile_sizes` `=` $tile_sizes^)? (`mapping` `=` $mapping^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test.tile_using_custom_loop",
@@ -115348,7 +115436,7 @@
     "attributes": [
       { "name": "tile_sizes", "type": "DefaultValuedAttr<TypedArrayAttrBase<I64Attr>, {}>" }
     ],
-    "assemblyFormat": "$root_op `tile_sizes` `=` $tile_sizes\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$root_op `tile_sizes` `=` $tile_sizes attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.test.tile_using_forall",
@@ -115365,7 +115453,7 @@
       { "name": "interchange", "type": "DefaultValuedOptionalAttr<TypedArrayAttrBase<I64Attr>, {}>" },
       { "name": "mapping", "type": "OptionalAttr<TypedArrayAttrBase<AnyAttrOf<[ DeviceMappingAttrInterface, DeviceMaskingAttrInterface ]>>>" }
     ],
-    "assemblyFormat": "$target ($tile_sizes^)? (`interchange` `=` $interchange^)?\n    (`mapping` `=` $mapping^)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target ($tile_sizes^)? (`interchange` `=` $interchange^)?\n    (`mapping` `=` $mapping^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.tune.alternatives",
@@ -115384,7 +115472,7 @@
     "regions": [
       { "name": "alternatives", "type": "VariadicRegion<SizedRegion<1>>" }
     ],
-    "assemblyFormat": "`<` $name `>`\n    (`selected_region` `=` custom<AlternativesOpSelectedRegion>(\n        $selected_region_attr, $selected_region_param)^)?\n    attr-dict-with-keyword\n    (`:` type($selected_region_param)^)?\n    (`->` type($results)^)?\n    regions"
+    "assemblyFormat": "`<` $name `>`\n    (`selected_region` `=` custom<AlternativesOpSelectedRegion>(\n        $selected_region_attr, $selected_region_param)^)? attr-dict-with-keyword\n    (`:` type($selected_region_param)^)?\n    (`->` type($results)^)?\n    regions"
   },
   {
     "name": "transform.tune.knob",
@@ -115555,7 +115643,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$target\n    `input_sg_layout` `=` custom<DynamicIndexList>($input_sg_layout, $static_input_sg_layout)\n    `input_sg_data` `=` custom<DynamicIndexList>($input_sg_data, $static_input_sg_data)\n    (`input_inst_data` `=` custom<DynamicIndexList>($input_inst_data, $static_input_inst_data)^)?\n    (`input_order` `=` $input_order^)?\n    `target_sg_layout` `=` custom<DynamicIndexList>($target_sg_layout, $static_target_sg_layout)\n    `target_sg_data` `=` custom<DynamicIndexList>($target_sg_data, $static_target_sg_data)\n    (`target_inst_data` `=` custom<DynamicIndexList>($target_inst_data, $static_target_inst_data)^)?\n    (`target_order` `=` $target_order^)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `input_sg_layout` `=` custom<DynamicIndexList>($input_sg_layout, $static_input_sg_layout)\n    `input_sg_data` `=` custom<DynamicIndexList>($input_sg_data, $static_input_sg_data)\n    (`input_inst_data` `=` custom<DynamicIndexList>($input_inst_data, $static_input_inst_data)^)?\n    (`input_order` `=` $input_order^)?\n    `target_sg_layout` `=` custom<DynamicIndexList>($target_sg_layout, $static_target_sg_layout)\n    `target_sg_data` `=` custom<DynamicIndexList>($target_sg_data, $static_target_sg_data)\n    (`target_inst_data` `=` custom<DynamicIndexList>($target_inst_data, $static_target_inst_data)^)?\n    (`target_order` `=` $target_order^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.xegpu.get_desc_op",
@@ -115595,7 +115683,7 @@
     "attributes": [
       { "name": "static_nb_prefetch", "type": "DefaultValuedOptionalAttr<I64Attr, 1>" }
     ],
-    "assemblyFormat": "$target\n    `nb_prefetch` `=` ($dynamic_nb_prefetch^):($static_nb_prefetch)?\n    attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    `nb_prefetch` `=` ($dynamic_nb_prefetch^):($static_nb_prefetch)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.xegpu.set_anchor_layout",
@@ -115618,7 +115706,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$target (`index` `=` $index^)?\n    `sg_layout` `=` custom<DynamicIndexList>($sg_layout, $static_sg_layout)\n    `sg_data` `=` custom<DynamicIndexList>($sg_data, $static_sg_data)\n    (`inst_data` `=` custom<DynamicIndexList>($inst_data, $static_inst_data)^)?\n    (`order` `=` $order^)?\n    (`slice_dims` `=` $slice_dims^)?\n    attr-dict `:` qualified(type(operands))"
+    "assemblyFormat": "$target (`index` `=` $index^)?\n    `sg_layout` `=` custom<DynamicIndexList>($sg_layout, $static_sg_layout)\n    `sg_data` `=` custom<DynamicIndexList>($sg_data, $static_sg_data)\n    (`inst_data` `=` custom<DynamicIndexList>($inst_data, $static_inst_data)^)?\n    (`order` `=` $order^)?\n    (`slice_dims` `=` $slice_dims^)? attr-dict `:` qualified(type(operands))"
   },
   {
     "name": "transform.xegpu.set_desc_layout",
@@ -115656,7 +115744,7 @@
     "attributes": [
       { "name": "static_threads", "type": "DefaultValuedOptionalAttr<DenseI64ArrayAttr, {}>" }
     ],
-    "assemblyFormat": "$target\n    `threads` `=` custom<DynamicIndexList>($threads, $static_threads)\n    attr-dict `:` qualified(type(operands))"
+    "assemblyFormat": "$target\n    `threads` `=` custom<DynamicIndexList>($threads, $static_threads) attr-dict `:` qualified(type(operands))"
   },
   {
     "name": "transform.xegpu.set_op_layout_attr",
@@ -115728,7 +115816,7 @@
     "summary": "A block-level barrier for inter-GPU synchronization.",
     "description": "This operation implements a block-level barrier between multiple GPUs.\n    It takes a pointer of pointers to signal buffers (one from each\n    participating GPU), the rank of the current device, and a signal value to\n    write/wait for. The signal values on consequent calls to this operation must\n    increase monotonically for the same signal buffers pointer. A block on one\n    GPU synchronizes with blocks on other GPUs with the same block id.\n\n    *NOTE* Block orchestration order is not guaranteed across GPUs,\n    so there is a chance of a deadlock should the number of blocks be greater\n    than the number of SMs on a GPU. That is to say that if BlockN is launched\n    on GPU0 and BlockM on GPU1 and they both wait for each other to finish,\n    and there is no place to schedule more blocks on either GPU, then we\n    will have a deadlock. In general, the user of this operation should avoid\n    this by not oversubscribing the number of available SMs on a GPU. There is\n    also a secondary restriction that the number of threads per block must\n    exceed the number of participating GPUs. In the nominal case, where we are\n    within a single NV Link domain, this should not be an issue since the number\n    of participating GPUs would usually be much smaller than the number of\n    threads per block.\n\n    The synchronization logic is as follows:\n    1. Each GPU (identified by `device_rank`) writes the `signal` value to an\n       index `blockId * world_size + device_rank` in *every* buffer provided in\n       `$signal_buffers`.\n    2. After writing, GPU `r` polls its own buffer (`$signal_buffers[r]`).\n    3. It waits until the values at locations corresponding to all other ranks\n       (i.e., `blockId * world_size + [0..world_size)` are greater than or equal\n       to the `signal` value.\n    4. When the wait is over, all GPUs working on the same `blockId` have\n       successfully synchronized.\n\n    This operation ensures that GPUs in the same synchronization group do not\n    get more than one \"wave\" (or chunk) of data processing ahead of each other.\n    For clarity, a wave here is a set of work items that are processed together.\n    A single thread block for instance can process multiple waves. In such a\n    scenario, any given GPU can be at most 1 wave ahead of the other GPUs for\n    the same block id.\n\n    Internally, this operation uses TTXLA_Atomic(Write|SpinWait)Op on signal\n    buffers to synchronize all participating GPUs.",
     "operands": [
-      { "name": "signal_buffers", "type": "TT_PtrOf<[TT_PtrOf<[I32]>]>" },
+      { "name": "signal_buffers", "type": "TT_PtrOf<[I64]>" },
       { "name": "device_rank", "type": "I32" },
       { "name": "signal_value", "type": "I32" }
     ],
@@ -116178,6 +116266,26 @@
     "assemblyFormat": "$sem `,` $scope `,` $ptr `,` $cmp `,` $val attr-dict `:`\n      functional-type(operands, $result)"
   },
   {
+    "name": "tt.atomic_load",
+    "summary": "Atomically load from a pointer or tensor of pointers",
+    "operands": [
+      { "name": "ptr", "type": "TT_PtrLike" },
+      { "name": "mask", "type": "Optional<TT_BoolLike>" }
+    ],
+    "results": [
+      { "name": "result", "type": "TT_Type" }
+    ],
+    "attributes": [
+      { "name": "sem", "type": "TT_MemSemanticAttr{relaxed|acquire|release|acq_rel}" },
+      { "name": "scope", "type": "TT_MemSyncScopeAttr{gpu|cta|sys}" }
+    ],
+    "traits": [
+      { "type": "TypesMatchWith<'ptr', 'result', 'getPointeeType($_self)'>" },
+      { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" }
+    ],
+    "assemblyFormat": "$sem `,` $scope `,` $ptr (`,` $mask^)? attr-dict `:`\n      functional-type(operands, $result)"
+  },
+  {
     "name": "tt.atomic_poll",
     "summary": "poll an atomic value",
     "description": "Repeatedly load each logical element of $ptr with relaxed semantics\n        until it equals $expected or the operation's timeout expires. One thread polls\n        each element; threads replicating that element wait for its result.\n        For acquire semantics, issue an acquire fence after each successful\n        poll. The block waits for all elements to finish. The result has the\n        same shape and encoding as $ptr. All elements share one timeout budget,\n        and each element is loaded at least once, even with a zero timeout.",
@@ -116221,6 +116329,24 @@
       { "type": "TypesMatchWith<'val', 'mask', 'getI1SameShape($_self)'>" }
     ],
     "assemblyFormat": "$atomic_rmw_op `,` $sem `,` $scope `,` $ptr `,` $val (`,` $mask^)?  attr-dict `:`\n      functional-type(operands, $result)"
+  },
+  {
+    "name": "tt.atomic_store",
+    "summary": "Atomically store through a pointer or tensor of pointers",
+    "operands": [
+      { "name": "ptr", "type": "TT_PtrLike" },
+      { "name": "value", "type": "TT_Type" },
+      { "name": "mask", "type": "Optional<TT_BoolLike>" }
+    ],
+    "attributes": [
+      { "name": "sem", "type": "TT_MemSemanticAttr{relaxed|acquire|release|acq_rel}" },
+      { "name": "scope", "type": "TT_MemSyncScopeAttr{gpu|cta|sys}" }
+    ],
+    "traits": [
+      { "type": "TypesMatchWith<'ptr', 'value', 'getPointeeType($_self)'>" },
+      { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" }
+    ],
+    "assemblyFormat": "$sem `,` $scope `,` $ptr `,` $value (`,` $mask^)? attr-dict `:`\n      type($ptr)"
   },
   {
     "name": "tt.bitcast",
@@ -116320,10 +116446,9 @@
       { "name": "result", "type": "TT_Tensor" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, ::mlir::triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, ::mlir::triton::EvictionPolicy::NORMAL>" }
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" }
     ],
-    "assemblyFormat": "$desc `[` $indices `]`\n    oilist(\n      `cacheModifier` `=` $cache |\n      `evictionPolicy` `=` $evict\n    )\n    attr-dict `:` qualified(type($desc)) `->` type($result)"
+    "assemblyFormat": "$desc `[` $indices `]`\n    attr-dict `:` qualified(type($desc)) `->` type($result)"
   },
   {
     "name": "tt.descriptor_reduce",
@@ -116592,8 +116717,7 @@
       { "name": "result", "type": "TT_Type" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, ::mlir::triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, ::mlir::triton::EvictionPolicy::NORMAL>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "isVolatile", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
     "traits": [
@@ -116602,7 +116726,7 @@
       { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" },
       { "type": "TypesMatchWith<'ptr', 'other', 'getPointeeType($_self)'>" }
     ],
-    "assemblyFormat": "$ptr (`,` $mask^)? (`,` $other^)?\n      oilist(\n        `cacheModifier` `=` $cache |\n        `evictionPolicy` `=` $evict\n      )\n      attr-dict `:` type($ptr)"
+    "assemblyFormat": "$ptr (`,` $mask^)? (`,` $other^)?\n      attr-dict `:` type($ptr)"
   },
   {
     "name": "tt.make_range",
@@ -116861,15 +116985,14 @@
       { "name": "mask", "type": "Optional<TT_BoolLike>" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, triton::EvictionPolicy::NORMAL>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "ignore_cta", "type": "UnitAttr" }
     ],
     "traits": [
       { "type": "TypesMatchWith<'ptr', 'value', 'getPointeeType($_self)'>" },
       { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" }
     ],
-    "assemblyFormat": "$ptr `,` $value (`,` $mask^)?\n      oilist(`cacheModifier` `=` $cache | `evictionPolicy` `=` $evict)\n      attr-dict `:` type($ptr)"
+    "assemblyFormat": "$ptr `,` $value (`,` $mask^)?\n      attr-dict `:` type($ptr)"
   },
   {
     "name": "tt.trans",
@@ -117076,8 +117199,7 @@
       { "name": "token", "type": "TTG_AsyncToken" }
     ],
     "attributes": [
-      { "name": "cache", "type": "DefaultValuedAttr<TT_CacheModifierAttr{none|ca|cg|wb|cs|wt|cv}, triton::CacheModifier::NONE>" },
-      { "name": "evict", "type": "DefaultValuedAttr<TT_EvictionPolicyAttr{evict_normal|evict_first|evict_last}, triton::EvictionPolicy::NORMAL>" },
+      { "name": "cachePolicy", "type": "OptionalAttr<AnyAttr>" },
       { "name": "isVolatile", "type": "DefaultValuedAttr<BoolAttr, false>" },
       { "name": "contiguity", "type": "DefaultValuedAttr<I32Attr, 1>" }
     ],
@@ -117086,7 +117208,7 @@
       { "type": "TypesMatchWith<'src', 'mask', 'getI1SameShape($_self)'>" },
       { "type": "TypesMatchWith<'src', 'other', 'getPointeeType($_self)'>" }
     ],
-    "assemblyFormat": "$src `,` $result (`mask` $mask^)? (`other` $other^)?\n    oilist(`cacheModifier` `=` $cache | `evictionPolicy` `=` $evict)\n    attr-dict `:` type($src) `->` type($result)"
+    "assemblyFormat": "$src `,` $result (`mask` $mask^)? (`other` $other^)?\n    attr-dict `:` type($src) `->` type($result)"
   },
   {
     "name": "ttg.async_wait",
@@ -117567,6 +117689,26 @@
     "assemblyFormat": "$sem `,` $scope `,` $ptr `,` $cmp `,` $val attr-dict `:`\n    functional-type(operands, $result)"
   },
   {
+    "name": "tti.experimental_gsan_atomic_load",
+    "summary": "Lower a GSan-instrumented atomic load",
+    "operands": [
+      { "name": "ptr", "type": "TT_PtrLike" },
+      { "name": "mask", "type": "Optional<TT_BoolLike>" }
+    ],
+    "results": [
+      { "name": "result", "type": "TT_Type" }
+    ],
+    "attributes": [
+      { "name": "sem", "type": "TT_MemSemanticAttr{relaxed|acquire|release|acq_rel}" },
+      { "name": "scope", "type": "TT_MemSyncScopeAttr{gpu|cta|sys}" }
+    ],
+    "traits": [
+      { "type": "TypesMatchWith<'ptr', 'result', 'getPointeeType($_self)'>" },
+      { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" }
+    ],
+    "assemblyFormat": "$sem `,` $scope `,` $ptr (`,` $mask^)? attr-dict `:`\n    functional-type(operands, $result)"
+  },
+  {
     "name": "tti.experimental_gsan_atomic_poll",
     "summary": "Instrument a completed atomic poll for GSan",
     "description": "Records the successful read performed by an atomic poll after the hardware\n    polling loop has completed.",
@@ -117604,6 +117746,24 @@
       { "type": "TypesMatchWith<'val', 'mask', 'getI1SameShape($_self)'>" }
     ],
     "assemblyFormat": "$atomic_rmw_op `,` $sem `,` $scope `,` $ptr `,` $val (`,` $mask^)? attr-dict `:`\n    functional-type(operands, $result)"
+  },
+  {
+    "name": "tti.experimental_gsan_atomic_store",
+    "summary": "Lower a GSan-instrumented atomic store",
+    "operands": [
+      { "name": "ptr", "type": "TT_PtrLike" },
+      { "name": "value", "type": "TT_Type" },
+      { "name": "mask", "type": "Optional<TT_BoolLike>" }
+    ],
+    "attributes": [
+      { "name": "sem", "type": "TT_MemSemanticAttr{relaxed|acquire|release|acq_rel}" },
+      { "name": "scope", "type": "TT_MemSyncScopeAttr{gpu|cta|sys}" }
+    ],
+    "traits": [
+      { "type": "TypesMatchWith<'ptr', 'value', 'getPointeeType($_self)'>" },
+      { "type": "TypesMatchWith<'ptr', 'mask', 'getI1SameShape(getPointeeType($_self))'>" }
+    ],
+    "assemblyFormat": "$sem `,` $scope `,` $ptr `,` $value (`,` $mask^)? attr-dict `:`\n    type($ptr)"
   },
   {
     "name": "tti.experimental_gsan_atomic_tensor_access",
@@ -127290,7 +127450,7 @@
   {
     "name": "ttnn.sdpa_bw",
     "summary": "Scaled dot-product attention backward (ttml).",
-    "description": "Training-oriented fused scaled dot-product attention backward pass, backed\n      by the ttml metal op `ttml::metal::sdpa_bw`. Given the upstream gradient\n      and the forward pass tensors (output, Q, K, V and log-sum-exp\n      intermediates), computes the gradients w.r.t. query, key and value.\n\n      All tensors are rank 4 `(B, H, S, D)`. `attention_mask` is only valid when\n      `mask_type` is `arbitrary`.",
+    "description": "Training-oriented fused scaled dot-product attention backward pass, backed\n      by the ttml metal op `ttml::metal::sdpa_bw`. Given the upstream gradient\n      and the forward pass tensors (output, Q, K, V and log-sum-exp\n      intermediates), computes the gradients w.r.t. query, key and value.\n\n      All tensors are rank 4 `(B, H, S, D)`. `attention_mask` is only valid when\n      `mask_type` is `arbitrary`.\n\n      `dropout_probability` must be 0.0. Dropout is not implemented in the\n      backward pass, so a nonzero value would silently produce the gradients of\n      the dropout-free forward pass. The verifier rejects it.",
     "operands": [
       { "name": "grad_output", "type": "AnyRankedTensor" },
       { "name": "attn_output", "type": "AnyRankedTensor" },

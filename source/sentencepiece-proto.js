@@ -5,9 +5,9 @@ sentencepiece.TrainerSpec = class TrainerSpec {
 
     constructor() {
         this.input = [];
-        this.accept_language = [];
         this.control_symbols = [];
         this.user_defined_symbols = [];
+        this.accept_language = [];
     }
 
     static decode(reader, length) {
@@ -30,9 +30,6 @@ sentencepiece.TrainerSpec = class TrainerSpec {
                     break;
                 case 4:
                     message.vocab_size = reader.int32();
-                    break;
-                case 5:
-                    message.accept_language.push(reader.string());
                     break;
                 case 10:
                     message.character_coverage = reader.float();
@@ -130,11 +127,32 @@ sentencepiece.TrainerSpec = class TrainerSpec {
                 case 44:
                     message.unk_surface = reader.string();
                     break;
+                case 54:
+                    message.seed_sentencepieces_file = reader.string();
+                    break;
+                case 5:
+                    message.accept_language.push(reader.string());
+                    break;
+                case 6:
+                    message.self_test_sample_size = reader.int32();
+                    break;
+                case 12:
+                    message.mining_sentence_size = reader.int32();
+                    break;
+                case 13:
+                    message.training_sentence_size = reader.int32();
+                    break;
                 case 49:
                     message.train_extremely_large_corpus = reader.bool();
                     break;
-                case 54:
-                    message.seed_sentencepieces_file = reader.string();
+                case 50:
+                    message.enable_differential_privacy = reader.bool();
+                    break;
+                case 51:
+                    message.differential_privacy_noise_level = reader.float();
+                    break;
+                case 52:
+                    message.differential_privacy_clipping_threshold = reader.uint64();
                     break;
                 default:
                     reader.skipType(tag & 7);
@@ -164,9 +182,6 @@ sentencepiece.TrainerSpec = class TrainerSpec {
                     break;
                 case "vocab_size":
                     message.vocab_size = reader.int32();
-                    break;
-                case "accept_language":
-                    reader.array(message.accept_language, () => reader.string());
                     break;
                 case "character_coverage":
                     message.character_coverage = reader.float();
@@ -264,11 +279,32 @@ sentencepiece.TrainerSpec = class TrainerSpec {
                 case "unk_surface":
                     message.unk_surface = reader.string();
                     break;
+                case "seed_sentencepieces_file":
+                    message.seed_sentencepieces_file = reader.string();
+                    break;
+                case "accept_language":
+                    reader.array(message.accept_language, () => reader.string());
+                    break;
+                case "self_test_sample_size":
+                    message.self_test_sample_size = reader.int32();
+                    break;
+                case "mining_sentence_size":
+                    message.mining_sentence_size = reader.int32();
+                    break;
+                case "training_sentence_size":
+                    message.training_sentence_size = reader.int32();
+                    break;
                 case "train_extremely_large_corpus":
                     message.train_extremely_large_corpus = reader.bool();
                     break;
-                case "seed_sentencepieces_file":
-                    message.seed_sentencepieces_file = reader.string();
+                case "enable_differential_privacy":
+                    message.enable_differential_privacy = reader.bool();
+                    break;
+                case "differential_privacy_noise_level":
+                    message.differential_privacy_noise_level = reader.float();
+                    break;
+                case "differential_privacy_clipping_threshold":
+                    message.differential_privacy_clipping_threshold = reader.uint64();
                     break;
                 default:
                     reader.field(tag, message);
@@ -313,8 +349,14 @@ sentencepiece.TrainerSpec.prototype.bos_piece = "<s>";
 sentencepiece.TrainerSpec.prototype.eos_piece = "</s>";
 sentencepiece.TrainerSpec.prototype.pad_piece = "<pad>";
 sentencepiece.TrainerSpec.prototype.unk_surface = " E28187 ";
-sentencepiece.TrainerSpec.prototype.train_extremely_large_corpus = false;
 sentencepiece.TrainerSpec.prototype.seed_sentencepieces_file = "";
+sentencepiece.TrainerSpec.prototype.self_test_sample_size = 0;
+sentencepiece.TrainerSpec.prototype.mining_sentence_size = 0;
+sentencepiece.TrainerSpec.prototype.training_sentence_size = 0;
+sentencepiece.TrainerSpec.prototype.train_extremely_large_corpus = false;
+sentencepiece.TrainerSpec.prototype.enable_differential_privacy = false;
+sentencepiece.TrainerSpec.prototype.differential_privacy_noise_level = 0;
+sentencepiece.TrainerSpec.prototype.differential_privacy_clipping_threshold = 0n;
 
 sentencepiece.TrainerSpec.ModelType = {
     "UNIGRAM": 1,
