@@ -16019,8 +16019,9 @@ _.LinalgDialect = class extends _.Dialect {
             });
         }
         if (op === 'linalg.elementwise') {
-            parser.parseKeyword('kind');
-            parser.parseEqual();
+            if (parser.parseOptionalKeyword('kind')) {
+                parser.parseEqual();
+            }
             const kind = parser.parseAttribute();
             result.addAttribute('kind', kind.value);
             const indexingMapsAttr = this.parseIndexingMapsAttr(parser);
@@ -22194,6 +22195,7 @@ _.llvm.LLVMDialect = class extends _.Dialect {
 
     constructor(operations, name = 'llvm') {
         super(operations, name);
+        this.registerCustomDirective('CmpPredicate', this.parseCmpPredicate.bind(this));
         this.registerCustomDirective('GEPIndices', this.parseGEPIndices.bind(this));
         this.registerCustomDirective('IndirectBrOpSucessors', this.parseIndirectBrOpSucessors.bind(this));
         this.registerCustomDirective('InsertExtractValueElementType', this.parseInsertExtractValueElementType.bind(this));
@@ -22230,6 +22232,15 @@ _.llvm.LLVMDialect = class extends _.Dialect {
             case 'x86_amx': return new _.Type('!llvm.x86_amx');
             default: throw new mlir.Error(`Unknown LLVM type '${key}'.`);
         }
+    }
+
+    parseCmpPredicate(parser, op, name) {
+        const value = parser.parseString();
+        const attr = op.name.getRegisteredInfo().metadata.attributes.find((attr) => attr.name === name);
+        if (!attr.type.getValue('enumerants').includes(value)) {
+            parser.emitError(`'${value}' is an incorrect value of the 'predicate' attribute`);
+        }
+        op.addAttribute(name, new _.TypedAttr(value));
     }
 
     parseLLVMIntegerOverflowFlagsProp(parser) {
@@ -22532,9 +22543,6 @@ _.llvm.LLVMDialect = class extends _.Dialect {
         if (op === 'llvm.getelementptr') {
             return this.parseLLVMGEPOp(parser, result);
         }
-        if (op === 'llvm.icmp' || op === 'llvm.fcmp') {
-            return this.parseLLVMCmpOp(parser, result);
-        }
         return super.parseOperation(parser, result);
     }
 
@@ -22575,6 +22583,7 @@ _.llvm.LLVMDialect = class extends _.Dialect {
             parser.parseGreater();
             result.addAttribute('dereferenceable', dereferenceable);
         }
+        result.propertiesAttr = this.parsePropertiesFromKeyValueList(parser, result.name.getRegisteredInfo());
         parser.parseOptionalAttrDict(result.attributes);
         parser.parseColon();
         const addressType = parser.parseType();
@@ -22611,6 +22620,7 @@ _.llvm.LLVMDialect = class extends _.Dialect {
         if (parser.parseOptionalKeyword('invariant_group')) {
             result.addAttribute('invariantGroup', new _.UnitAttr());
         }
+        result.propertiesAttr = this.parsePropertiesFromKeyValueList(parser, result.name.getRegisteredInfo());
         parser.parseOptionalAttrDict(result.attributes);
         parser.parseColon();
         let valueType = parser.parseType();
@@ -22948,28 +22958,6 @@ _.llvm.LLVMDialect = class extends _.Dialect {
         const sig = parser.parseFunctionSignature();
         parser.resolveOperands(unresolvedOperands, sig.argTypes, result.operands);
         result.addTypes(sig.resultTypes);
-        return true;
-    }
-
-    parseLLVMCmpOp(parser, result) {
-        // llvm.icmp "eq" %lhs, %rhs : i32
-        const predicate = parser.parseString();
-        result.addAttribute('predicate', predicate);
-        const lhs = parser.parseOperand();
-        parser.parseComma();
-        const rhs = parser.parseOperand();
-        parser.parseOptionalAttrDict(result.attributes);
-        parser.parseColon();
-        const type = parser.parseType();
-        parser.resolveOperands([lhs, rhs], [type, type], result.operands);
-        // Result type is i1 (or vector/tensor of i1 for vector/tensor operands)
-        let resultType = new _.IntegerType('i1');
-        if (type instanceof _.VectorType) {
-            resultType = new _.VectorType(type.shape, new _.IntegerType('i1'), type.scalableDims);
-        } else if (type instanceof _.RankedTensorType) {
-            resultType = new _.RankedTensorType(type.shape, new _.IntegerType('i1'), type.encoding);
-        }
-        result.addTypes([resultType]);
         return true;
     }
 

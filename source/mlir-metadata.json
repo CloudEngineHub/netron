@@ -17998,10 +17998,11 @@
     "description": "The inputs/outputs of `function_type` should be IFRT arrays. They should be\n    placed on a subset of the `devices`.",
     "attributes": [
       { "name": "sym_name", "type": "SymbolNameAttr" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" },
       { "name": "function_type", "type": "TypeAttrOf<FunctionType>" },
       { "name": "devices", "type": "Ifrt_DevicesAttr" }
     ],
-    "assemblyFormat": "$sym_name `on` `devices` $devices attr-dict `:` $function_type"
+    "assemblyFormat": "($sym_visibility^)? $sym_name `on` `devices` $devices attr-dict `:` $function_type"
   },
   {
     "name": "ifrt.RemapArrays",
@@ -21603,7 +21604,7 @@
   {
     "name": "linalg.elementwise",
     "summary": "Performs element-wise operation",
-    "description": "The attribute `kind` describes arithmetic operation to perform. The\n    operation kind can be unary (e.g. max), binary (e.g. add) or ternary\n    (e.g. select).\n\n    By default, all indexing maps are identities. In the case of default\n    indexing map, all input and output shapes must match. The number of dims in\n    each of the identity maps is equal to the rank of the output type.\n\n    Affine-maps for operands and result are required to be provided by the user\n    when a transpose and/or broadcast is needed on any operand. When a map is not\n    provided, default identity maps are inferred for each operand.\n\n    Iterator-types are always all `parallel`.\n    Iterator-types are needed for constructing the underlying structured op.\n\n    The number of dims of the iterator-types are inferred from the rank of\n    the result type.\n\n    Example:\n\n    Defining a unary linalg.elementwise with default indexing-map:\n    ```mlir\n    %exp = linalg.elementwise\n        kind=#linalg.elementwise_kind<exp>\n        ins(%x : tensor<4x16x8xf32>)\n        outs(%y: tensor<4x16x8xf32>) -> tensor<4x16x8xf32>\n    ```\n\n    Defining a binary linalg.elementwise with user-defined indexing-map:\n    ```mlir\n    %add = linalg.elementwise\n        kind=#linalg.elementwise_kind<add>\n        indexing_maps = [#transpose, #broadcast, #identity]\n        ins(%exp, %arg1 : tensor<4x16x8xf32>, tensor<4x16xf32>)\n        outs(%arg2: tensor<4x8x16xf32>) -> tensor<4x8x16xf32>\n    ```",
+    "description": "The attribute `kind` describes arithmetic operation to perform. The\n    operation kind can be unary (e.g. max), binary (e.g. add) or ternary\n    (e.g. select).\n\n    By default, all indexing maps are identities. In the case of default\n    indexing map, all input and output shapes must match. The number of dims in\n    each of the identity maps is equal to the rank of the output type.\n\n    Affine-maps for operands and result are required to be provided by the user\n    when a transpose and/or broadcast is needed on any operand. When a map is not\n    provided, default identity maps are inferred for each operand.\n\n    Iterator-types are always all `parallel`.\n    Iterator-types are needed for constructing the underlying structured op.\n\n    The number of dims of the iterator-types are inferred from the rank of\n    the result type.\n\n    Example:\n\n    Defining a unary linalg.elementwise with default indexing-map:\n    ```mlir\n    %exp = linalg.elementwise <exp>\n        ins(%x : tensor<4x16x8xf32>)\n        outs(%y: tensor<4x16x8xf32>) -> tensor<4x16x8xf32>\n    ```\n\n    Defining a binary linalg.elementwise with user-defined indexing-map:\n    ```mlir\n    %add = linalg.elementwise <add>\n        indexing_maps = [#transpose, #broadcast, #identity]\n        ins(%exp, %arg1 : tensor<4x16x8xf32>, tensor<4x16xf32>)\n        outs(%arg2: tensor<4x8x16xf32>) -> tensor<4x8x16xf32>\n    ```",
     "operands": [
       { "name": "inputs", "type": "Variadic<AnyType>" },
       { "name": "outputs", "type": "Variadic<AnyShaped>" }
@@ -22641,7 +22642,7 @@
     "traits": [
       { "type": "TypesMatchWith<'val', 'res', '$_self'>" }
     ],
-    "assemblyFormat": "(`volatile` $volatile_^)? $bin_op $ptr `,` $val\n    (`syncscope` `(` $syncscope^ `)`)? $ordering attr-dict `:`\n    qualified(type($ptr)) `,` type($val)"
+    "assemblyFormat": "(`volatile` $volatile_^)? $bin_op $ptr `,` $val\n    (`syncscope` `(` $syncscope^ `)`)? $ordering\n    prop-dict\n    attr-dict `:`\n    qualified(type($ptr)) `,` type($val)"
   },
   {
     "name": "llvm.bitcast",
@@ -22684,7 +22685,7 @@
     "successors": [
       { "name": "dest", "type": "AnySuccessor" }
     ],
-    "assemblyFormat": "$dest (`(` $destOperands^ `:` type($destOperands) `)`)? attr-dict"
+    "assemblyFormat": "$dest (`(` $destOperands^ `:` type($destOperands) `)`)?\n    (`loop_annotation` `=` $loop_annotation^)? attr-dict"
   },
   {
     "name": "llvm.call",
@@ -22793,7 +22794,7 @@
       { "type": "TypesMatchWith<'val', 'cmp', '$_self'>" },
       { "type": "TypesMatchWith<'val', 'res', 'getValAndBoolStructType($_self)'>" }
     ],
-    "assemblyFormat": "(`weak` $weak^)? (`volatile` $volatile_^)? $ptr `,` $cmp `,` $val\n    (`syncscope` `(` $syncscope^ `)`)? $success_ordering $failure_ordering\n    attr-dict `:` qualified(type($ptr)) `,` type($val)"
+    "assemblyFormat": "(`weak` $weak^)? (`volatile` $volatile_^)? $ptr `,` $cmp `,` $val\n    (`syncscope` `(` $syncscope^ `)`)? $success_ordering $failure_ordering\n    prop-dict\n    attr-dict `:`\n    qualified(type($ptr)) `,` type($val)"
   },
   {
     "name": "llvm.comdat",
@@ -22837,7 +22838,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$condition ( `weights` `(` $branch_weights^ `)` )? `,`\n    $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`\n    $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?\n    attr-dict"
+    "assemblyFormat": "$condition ( `weights` `(` $branch_weights^ `)` )? `,`\n    $trueDest (`(` $trueDestOperands^ `:` type($trueDestOperands) `)`)? `,`\n    $falseDest (`(` $falseDestOperands^ `:` type($falseDestOperands) `)`)?\n    (`loop_annotation` `=` $loop_annotation^)?\n    attr-dict"
   },
   {
     "name": "llvm.dso_local_equivalent",
@@ -22895,7 +22896,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.fcmp",
@@ -22913,7 +22914,7 @@
     "traits": [
       { "type": "TypesMatchWith<'lhs', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
-    "hasCustomAssemblyFormat": true
+    "assemblyFormat": "custom<CmpPredicate>($predicate) $lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($lhs)"
   },
   {
     "name": "llvm.fdiv",
@@ -22930,7 +22931,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.fence",
@@ -22957,7 +22958,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.fneg",
@@ -22973,7 +22974,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$operand attr-dict `:` type($res)"
+    "assemblyFormat": "$operand (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.fpext",
@@ -23049,7 +23050,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.fsub",
@@ -23066,7 +23067,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($res)"
   },
   {
     "name": "llvm.func",
@@ -23182,7 +23183,7 @@
     "traits": [
       { "type": "TypesMatchWith<'lhs', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
-    "hasCustomAssemblyFormat": true
+    "assemblyFormat": "custom<CmpPredicate>($predicate) $lhs `,` $rhs attr-dict `:` type($lhs)"
   },
   {
     "name": "llvm.indirectbr",
@@ -23281,7 +23282,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.annotation",
@@ -23326,7 +23327,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.assume",
@@ -23354,7 +23355,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.atan2",
@@ -23371,7 +23372,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.bitreverse",
@@ -23413,7 +23414,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.clmul",
@@ -23444,7 +23445,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.coro.align",
@@ -23646,7 +23647,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.cosh",
@@ -23662,7 +23663,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.ctlz",
@@ -23767,7 +23768,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.exp10",
@@ -23783,7 +23784,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.exp2",
@@ -23799,7 +23800,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.expect",
@@ -23848,7 +23849,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.asin",
@@ -23866,7 +23867,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.atan",
@@ -23884,7 +23885,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.atan2",
@@ -23903,7 +23904,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.ceil",
@@ -23920,7 +23921,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.cos",
@@ -23938,7 +23939,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.cosh",
@@ -23956,7 +23957,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.exp",
@@ -23974,7 +23975,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.exp2",
@@ -23992,7 +23993,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fadd",
@@ -24011,7 +24012,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fcmp",
@@ -24030,7 +24031,7 @@
     "traits": [
       { "type": "TypesMatchWith<'arg_0', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
-    "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fcmps",
@@ -24049,7 +24050,7 @@
     "traits": [
       { "type": "TypesMatchWith<'arg_0', 'res', '::mlir::LLVM::getI1SameShape($_self)'>" }
     ],
-    "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$predicate $arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fdiv",
@@ -24068,7 +24069,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.floor",
@@ -24085,7 +24086,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fma",
@@ -24105,7 +24106,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 `,` $arg_2 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 `,` $arg_2 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fmul",
@@ -24124,7 +24125,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fmuladd",
@@ -24144,7 +24145,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 `,` $arg_2 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 `,` $arg_2 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fpext",
@@ -24158,7 +24159,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fptosi",
@@ -24172,7 +24173,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fptoui",
@@ -24186,7 +24187,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fptrunc",
@@ -24201,7 +24202,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.frem",
@@ -24220,7 +24221,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.fsub",
@@ -24239,7 +24240,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.ldexp",
@@ -24255,7 +24256,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:`\n    functional-type(operands, results)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:`\n    functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.llrint",
@@ -24270,7 +24271,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:`\n    type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:`\n    type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.llround",
@@ -24284,7 +24285,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.log",
@@ -24302,7 +24303,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.log10",
@@ -24320,7 +24321,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.log2",
@@ -24338,7 +24339,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.lrint",
@@ -24353,7 +24354,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:`\n    type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:`\n    type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.lround",
@@ -24367,7 +24368,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.maximum",
@@ -24385,7 +24386,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.maxnum",
@@ -24403,7 +24404,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.minimum",
@@ -24421,7 +24422,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.minnum",
@@ -24439,7 +24440,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.nearbyint",
@@ -24457,7 +24458,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.pow",
@@ -24476,7 +24477,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.powi",
@@ -24492,7 +24493,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior attr-dict `:`\n    functional-type(operands, results)"
+    "assemblyFormat": "$arg_0 `,` $arg_1 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:`\n    functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.rint",
@@ -24510,7 +24511,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.round",
@@ -24527,7 +24528,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.roundeven",
@@ -24544,7 +24545,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.sin",
@@ -24562,7 +24563,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.sinh",
@@ -24580,7 +24581,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.sitofp",
@@ -24595,7 +24596,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.constrained.sqrt",
@@ -24613,7 +24614,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.tan",
@@ -24631,7 +24632,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.tanh",
@@ -24649,7 +24650,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.trunc",
@@ -24666,7 +24667,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "$arg_0 $fpExceptionBehavior attr-dict `:` type($arg_0)"
+    "assemblyFormat": "$arg_0 $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0)"
   },
   {
     "name": "llvm.intr.experimental.constrained.uitofp",
@@ -24681,7 +24682,7 @@
       { "name": "fpExceptionBehavior", "type": "FPExceptionBehaviorAttr{ignore|maytrap|strict}" },
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior attr-dict `:` type($arg_0) `to` type(results)"
+    "assemblyFormat": "$arg_0 $roundingmode $fpExceptionBehavior (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($arg_0) `to` type(results)"
   },
   {
     "name": "llvm.intr.experimental.noalias.scope.decl",
@@ -24726,7 +24727,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.fake.use",
@@ -24749,7 +24750,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.fma",
@@ -24767,7 +24768,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.fmuladd",
@@ -24785,7 +24786,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.frexp",
@@ -24798,7 +24799,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.fshl",
@@ -24911,7 +24912,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.lifetime.end",
@@ -24961,7 +24962,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.log10",
@@ -24977,7 +24978,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.log2",
@@ -24993,7 +24994,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.lrint",
@@ -25059,7 +25060,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`,` `alignment` `(` $alignment^ `)`)? prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.masked.load",
@@ -25079,7 +25080,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "operands attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`,` `alignment` `(` $alignment^ `)`)? prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.masked.scatter",
@@ -25095,7 +25096,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "$value `,` $ptrs `,` $mask attr-dict `:` type($value) `,` type($mask) `into` type($ptrs)"
+    "assemblyFormat": "`(` $value `,` $ptrs `,` $mask `)` (`,` `alignment` `(` $alignment^ `)`)? prop-dict attr-dict `:` type($value) `,` type($mask) `into` type($ptrs)"
   },
   {
     "name": "llvm.intr.masked.store",
@@ -25112,7 +25113,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "$value `,` $data `,` $mask attr-dict `:` type($value) `,` type($mask) `into` qualified(type($data))"
+    "assemblyFormat": "`(` $value `,` $data `,` $mask `)` (`,` `alignment` `(` $alignment^ `)`)? prop-dict attr-dict `:` type($value) `,` type($mask) `into` qualified(type($data))"
   },
   {
     "name": "llvm.intr.matrix.column.major.load",
@@ -25128,7 +25129,7 @@
       { "name": "rows", "type": "I32Attr" },
       { "name": "columns", "type": "I32Attr" }
     ],
-    "assemblyFormat": "$data `,` `<` `stride` `=` $stride `>` attr-dict`:` type($res) `from` qualified(type($data)) `stride` type($stride)"
+    "assemblyFormat": "$data `,` `<` `stride` `=` $stride `>` `,` `is_volatile` `=` $isVolatile `,` `rows` `=` $rows `,` `columns` `=` $columns attr-dict `:` type($res) `from` qualified(type($data)) `stride` type($stride)"
   },
   {
     "name": "llvm.intr.matrix.column.major.store",
@@ -25142,7 +25143,7 @@
       { "name": "rows", "type": "I32Attr" },
       { "name": "columns", "type": "I32Attr" }
     ],
-    "assemblyFormat": "$matrix `,` $data `,` `<` `stride` `=` $stride `>` attr-dict`:` type($matrix) `to` qualified(type($data)) `stride` type($stride)"
+    "assemblyFormat": "$matrix `,` $data `,` `<` `stride` `=` $stride `>` `,` `is_volatile` `=` $isVolatile `,` `rows` `=` $rows `,` `columns` `=` $columns attr-dict `:` type($matrix) `to` qualified(type($data)) `stride` type($stride)"
   },
   {
     "name": "llvm.intr.matrix.multiply",
@@ -25158,7 +25159,7 @@
       { "name": "lhs_columns", "type": "I32Attr" },
       { "name": "rhs_columns", "type": "I32Attr" }
     ],
-    "assemblyFormat": "$lhs `,` $rhs attr-dict `:` `(` type($lhs) `,` type($rhs) `)` `->` type($res)"
+    "assemblyFormat": "$lhs `,` $rhs `,` `lhs_rows` `=` $lhs_rows `,` `lhs_columns` `=` $lhs_columns `,` `rhs_columns` `=` $rhs_columns attr-dict `:` `(` type($lhs) `,` type($rhs) `)` `->` type($res)"
   },
   {
     "name": "llvm.intr.matrix.transpose",
@@ -25172,7 +25173,7 @@
       { "name": "rows", "type": "I32Attr" },
       { "name": "columns", "type": "I32Attr" }
     ],
-    "assemblyFormat": "$matrix attr-dict `:` type($matrix) `into` type($res)"
+    "assemblyFormat": "$matrix `,` `rows` `=` $rows `,` `columns` `=` $columns attr-dict `:` type($matrix) `into` type($res)"
   },
   {
     "name": "llvm.intr.maximum",
@@ -25189,7 +25190,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.maxnum",
@@ -25206,7 +25207,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.memcpy",
@@ -25308,7 +25309,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.minnum",
@@ -25325,7 +25326,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.nearbyint",
@@ -25341,7 +25342,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.pdep",
@@ -25386,7 +25387,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.powi",
@@ -25400,7 +25401,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.prefetch",
@@ -25458,7 +25459,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.round",
@@ -25474,7 +25475,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.roundeven",
@@ -25490,7 +25491,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.sadd.sat",
@@ -25537,7 +25538,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.sincos",
@@ -25550,7 +25551,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.sinh",
@@ -25566,7 +25567,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.smax",
@@ -25616,7 +25617,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.ssa.copy",
@@ -25713,7 +25714,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.tanh",
@@ -25729,7 +25730,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.threadlocal.address",
@@ -25758,7 +25759,7 @@
     "traits": [
       { "type": "SameOperandsAndResultType" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.uadd.sat",
@@ -25785,7 +25786,7 @@
     "attributes": [
       { "name": "failureKind", "type": "I8Attr" }
     ],
-    "assemblyFormat": "prop-dict attr-dict"
+    "assemblyFormat": "`failureKind` `=` $failureKind attr-dict"
   },
   {
     "name": "llvm.intr.ucmp",
@@ -25985,7 +25986,8 @@
     ],
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
-    ]
+    ],
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.fmax",
@@ -25998,7 +26000,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.fmaximum",
@@ -26011,7 +26013,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.fmin",
@@ -26024,7 +26026,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.fminimum",
@@ -26037,7 +26039,7 @@
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
     ],
-    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.fmul",
@@ -26050,7 +26052,8 @@
     ],
     "attributes": [
       { "name": "fastmathFlags", "type": "DefaultValuedAttr<LLVM_FastmathFlagsAttr{none|nnan|ninf|nsz|arcp|contract|afn|reassoc|fast}, {}>" }
-    ]
+    ],
+    "assemblyFormat": "`(` operands `)` (`fastmath` `` $fastmathFlags^)? attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.vector.reduce.mul",
@@ -26422,7 +26425,31 @@
     ]
   },
   {
+    "name": "llvm.intr.vp.reduce.fmaximum",
+    "operands": [
+      { "name": "satrt_value", "type": "AnyFloat" },
+      { "name": "val", "type": "LLVM_VectorOf<AnyFloat>" },
+      { "name": "mask", "type": "LLVM_VectorOf<I1>" },
+      { "name": "evl", "type": "I32" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ]
+  },
+  {
     "name": "llvm.intr.vp.reduce.fmin",
+    "operands": [
+      { "name": "satrt_value", "type": "AnyFloat" },
+      { "name": "val", "type": "LLVM_VectorOf<AnyFloat>" },
+      { "name": "mask", "type": "LLVM_VectorOf<I1>" },
+      { "name": "evl", "type": "I32" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ]
+  },
+  {
+    "name": "llvm.intr.vp.reduce.fminimum",
     "operands": [
       { "name": "satrt_value", "type": "AnyFloat" },
       { "name": "val", "type": "LLVM_VectorOf<AnyFloat>" },
@@ -26809,7 +26836,7 @@
   },
   {
     "name": "llvm.load",
-    "description": "The `load` operation is used to read from memory. A load may be marked as\n    atomic, volatile, and/or nontemporal, and takes a number of optional\n    attributes that specify aliasing information.\n\n    An atomic load only supports a limited set of pointer, integer, and\n    floating point types, and requires an explicit alignment.\n\n    Examples:\n    ```mlir\n    // A volatile load of a float variable.\n    %0 = llvm.load volatile %ptr : !llvm.ptr -> f32\n\n    // A nontemporal load of a float variable.\n    %0 = llvm.load %ptr {nontemporal} : !llvm.ptr -> f32\n\n    // An atomic load of an integer variable.\n    %0 = llvm.load %ptr atomic monotonic {alignment = 8 : i64}\n        : !llvm.ptr -> i64\n    ```\n\n    See the following link for more details:\n    https://llvm.org/docs/LangRef.html#load-instruction",
+    "description": "The `load` operation is used to read from memory. A load may be marked as\n    atomic, volatile, and/or nontemporal, and takes a number of optional\n    attributes that specify aliasing information.\n\n    An atomic load only supports a limited set of pointer, integer, and\n    floating point types, and requires an explicit alignment.\n\n    Examples:\n    ```mlir\n    // A volatile load of a float variable.\n    %0 = llvm.load volatile %ptr : !llvm.ptr -> f32\n\n    // A nontemporal load of a float variable.\n    %0 = llvm.load %ptr <nontemporal> : !llvm.ptr -> f32\n\n    // An atomic load of an integer variable.\n    %0 = llvm.load %ptr atomic monotonic <alignment = 8>\n        : !llvm.ptr -> i64\n    ```\n\n    See the following link for more details:\n    https://llvm.org/docs/LangRef.html#load-instruction",
     "operands": [
       { "name": "addr", "type": "LLVM_AnyPointer" }
     ],
@@ -26830,7 +26857,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "(`volatile` $volatile_^)? $addr\n    (`atomic` (`syncscope` `(` $syncscope^ `)`)? $ordering^)?\n    (`invariant` $invariant^)?\n    (`invariant_group` $invariantGroup^)?\n    (`dereferenceable` `` $dereferenceable^)?\n    attr-dict `:` qualified(type($addr)) `->` type($res)"
+    "assemblyFormat": "(`volatile` $volatile_^)? $addr\n    (`atomic` (`syncscope` `(` $syncscope^ `)`)? $ordering^)?\n    (`invariant` $invariant^)?\n    (`invariant_group` $invariantGroup^)?\n    (`dereferenceable` `` $dereferenceable^)?\n    prop-dict\n    attr-dict `:` qualified(type($addr)) `->` type($res)"
   },
   {
     "name": "llvm.lshr",
@@ -26969,7 +26996,7 @@
     "traits": [
       { "type": "IsolatedFromAbove" }
     ],
-    "assemblyFormat": "($sym_visibility^)? custom<LLVMLinkage>($linkage)\n    ($visibility_^)? ($unnamed_addr^)?\n    $sym_name `:` $i_func_type `,` $resolver_type $resolver attr-dict"
+    "assemblyFormat": "($sym_visibility^)? custom<LLVMLinkage>($linkage)\n    ($visibility_^)? ($unnamed_addr^)?\n    $sym_name `:` $i_func_type `,` $resolver_type $resolver\n    oilist<`,`>(`dso_local` $dso_local | `addr_space` `=` $address_space)\n    attr-dict"
   },
   {
     "name": "llvm.mlir.metadata_as_value",
@@ -27140,7 +27167,7 @@
     "traits": [
       { "type": "AllTypesMatch<['trueValue', 'falseValue', 'res']>" }
     ],
-    "assemblyFormat": "operands attr-dict `:` type($condition) `,` type($res)"
+    "assemblyFormat": "operands (`fastmath` `` $fastmathFlags^)? attr-dict `:` type($condition) `,` type($res)"
   },
   {
     "name": "llvm.sext",
@@ -27213,7 +27240,7 @@
   },
   {
     "name": "llvm.store",
-    "description": "The `store` operation is used to write to memory. A store may be marked as\n    atomic, volatile, and/or nontemporal, and takes a number of optional\n    attributes that specify aliasing information.\n\n    An atomic store only supports a limited set of pointer, integer, and\n    floating point types, and requires an explicit alignment.\n\n    Examples:\n    ```mlir\n    // A volatile store of a float variable.\n    llvm.store volatile %val, %ptr : f32, !llvm.ptr\n\n    // A nontemporal store of a float variable.\n    llvm.store %val, %ptr {nontemporal} : f32, !llvm.ptr\n\n    // An atomic store of an integer variable.\n    llvm.store %val, %ptr atomic monotonic {alignment = 8 : i64}\n        : i64, !llvm.ptr\n    ```\n\n    See the following link for more details:\n    https://llvm.org/docs/LangRef.html#store-instruction",
+    "description": "The `store` operation is used to write to memory. A store may be marked as\n    atomic, volatile, and/or nontemporal, and takes a number of optional\n    attributes that specify aliasing information.\n\n    An atomic store only supports a limited set of pointer, integer, and\n    floating point types, and requires an explicit alignment.\n\n    Examples:\n    ```mlir\n    // A volatile store of a float variable.\n    llvm.store volatile %val, %ptr : f32, !llvm.ptr\n\n    // A nontemporal store of a float variable.\n    llvm.store %val, %ptr <nontemporal> : f32, !llvm.ptr\n\n    // An atomic store of an integer variable.\n    llvm.store %val, %ptr atomic monotonic <alignment = 8>\n        : i64, !llvm.ptr\n    ```\n\n    See the following link for more details:\n    https://llvm.org/docs/LangRef.html#store-instruction",
     "operands": [
       { "name": "value", "type": "LLVM_LoadableType" },
       { "name": "addr", "type": "LLVM_AnyPointer" }
@@ -27230,7 +27257,7 @@
       { "name": "noalias_scopes", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_AliasScopeAttr>>" },
       { "name": "tbaa", "type": "OptionalAttr<TypedArrayAttrBase<LLVM_TBAATagAttr>>" }
     ],
-    "assemblyFormat": "(`volatile` $volatile_^)? $value `,` $addr\n    (`atomic` (`syncscope` `(` $syncscope^ `)`)? $ordering^)?\n    (`invariant_group` $invariantGroup^)?\n    attr-dict `:` type($value) `,` qualified(type($addr))"
+    "assemblyFormat": "(`volatile` $volatile_^)? $value `,` $addr\n    (`atomic` (`syncscope` `(` $syncscope^ `)`)? $ordering^)?\n    (`invariant_group` $invariantGroup^)?\n    prop-dict\n    attr-dict `:` type($value) `,` qualified(type($addr))"
   },
   {
     "name": "llvm.sub",
@@ -27268,7 +27295,7 @@
     "traits": [
       { "type": "AttrSizedOperandSegments" }
     ],
-    "assemblyFormat": "$value `:` type($value) `,`\n    $defaultDestination (`(` $defaultOperands^ `:` type($defaultOperands) `)`)?\n    custom<SwitchOpCases>(ref(type($value)), $case_values, $caseDestinations,\n                                   $caseOperands, type($caseOperands))\n    attr-dict"
+    "assemblyFormat": "$value `:` type($value) `,`\n    $defaultDestination (`(` $defaultOperands^ `:` type($defaultOperands) `)`)?\n    custom<SwitchOpCases>(ref(type($value)), $case_values, $caseDestinations,\n                                   $caseOperands, type($caseOperands))\n    (`weights` `(` $branch_weights^ `)`)?\n    attr-dict"
   },
   {
     "name": "llvm.trunc",
@@ -34288,6 +34315,21 @@
     "assemblyFormat": "$addr `,` $count attr-dict `:` type(operands) `->` type($res)"
   },
   {
+    "name": "nvvm.mbarrier.check_layout",
+    "summary": "MBarrier Check-Layout Operation",
+    "description": "The `nvvm.mbarrier.check_layout` operation tests whether the *mbarrier\n    object* at `addr` was initialized with the layout named by `layout`.\n\n    - `res`: An `i1` that is `true` when the *mbarrier object* has the queried\n      layout and `false` otherwise.\n\n    The operation takes the following operand and attribute:\n    - `addr`: A pointer to the memory location of the *mbarrier object*. The\n      `addr` must be a pointer to generic or shared::cta memory. When it is\n      generic, the underlying address must be within the shared::cta memory\n      space; otherwise the behavior is undefined.\n    - `layout`: The mbarrier layout version to test for. Only `0`\n      (`layout::v0`) and `1` (`layout::v1`) are valid values. When it is\n      omitted, it defaults to `0`.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-check-layout)",
+    "operands": [
+      { "name": "addr", "type": "AnyTypeOf<[LLVM_PointerGeneric, LLVM_PointerShared]>" }
+    ],
+    "results": [
+      { "name": "res", "type": "I1" }
+    ],
+    "attributes": [
+      { "name": "layout", "type": "DefaultValuedAttr<ConfinedAttr<I32Attr, [ IntMinValue < 0 >, IntMaxValue < 1 > ]>, 0>" }
+    ],
+    "assemblyFormat": "$addr (`layout` `=` $layout^)? attr-dict `:` type($addr) `->` type($res)"
+  },
+  {
     "name": "nvvm.mbarrier.complete_tx",
     "summary": "MBarrier complete-tx Operation",
     "description": "The `nvvm.mbarrier.complete_tx` operation decrements the transaction\n    count of the *mbarrier object* at `addr` by `txcount`. It also signals\n    the completion of asynchronous transactions that were tracked by the\n    current phase. The `scope` specifies the set of threads that can directly\n    observe the memory synchronizing effect of the `mbarrier.complete_tx`\n    operation. `CTA` and `CLUSTER` are the only allowed values for `scope`.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-complete-tx)",
@@ -34316,13 +34358,16 @@
   {
     "name": "nvvm.mbarrier.init",
     "summary": "MBarrier Initialization Op",
-    "description": "The `nvvm.mbarrier.init` operation initializes an *mbarrier object* at the specified \n    memory location. \n\n    This operation initializes the *mbarrier object* with the following state:\n    - Current phase: 0\n    - Expected arrival count: `count`\n    - Pending arrival count: `count`  \n    - Transaction count (tx-count): 0\n\n    The operation takes the following operands:\n    - `addr`: A pointer to the memory location of the *mbarrier object*. The `addr`\n      must be a pointer to generic or shared::cta memory. When it is generic, the\n      underlying address must be within the shared::cta memory space; otherwise\n      the behavior is undefined.\n    - `count`: Integer specifying the number of threads that will participate in barrier\n      synchronization. Must be in the range [1, 2²⁰ - 1].\n    - `predicate`: Optional predicate for conditional execution.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-init)",
+    "description": "The `nvvm.mbarrier.init` operation initializes an *mbarrier object* at the specified \n    memory location. \n\n    This operation initializes the *mbarrier object* with the following state:\n    - Current phase: 0\n    - Expected arrival count: `count`\n    - Pending arrival count: `count`  \n    - Transaction count (tx-count): 0\n\n    The operation takes the following operands:\n    - `addr`: A pointer to the memory location of the *mbarrier object*. The `addr`\n      must be a pointer to generic or shared::cta memory. When it is generic, the\n      underlying address must be within the shared::cta memory space; otherwise\n      the behavior is undefined.\n    - `count`: Integer specifying the number of threads that will participate in barrier\n      synchronization. Must be in the range [1, 2²⁰ - 1].\n    - `layout`: Optional in-memory layout to initialize the *mbarrier object*\n      with. Only `0` (`layout::v0`) and `1` (`layout::v1`) are valid values.\n      When it is omitted, it defaults to `0`. The layout of an existing\n      *mbarrier object* can be queried with `nvvm.mbarrier.check_layout`.\n    - `predicate`: Optional predicate for conditional execution.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-mbarrier-init)",
     "operands": [
       { "name": "addr", "type": "AnyTypeOf<[LLVM_PointerGeneric, LLVM_PointerShared]>" },
       { "name": "count", "type": "I32" },
       { "name": "predicate", "type": "Optional<I1>" }
     ],
-    "assemblyFormat": "$addr `,` $count (`,` `predicate` `=` $predicate^)? attr-dict `:` type(operands)"
+    "attributes": [
+      { "name": "layout", "type": "DefaultValuedAttr<ConfinedAttr<I32Attr, [ IntMinValue < 0 >, IntMaxValue < 1 > ]>, 0>" }
+    ],
+    "assemblyFormat": "$addr `,` $count (`layout` `=` $layout^)? (`,` `predicate` `=` $predicate^)? attr-dict `:` type(operands)"
   },
   {
     "name": "nvvm.mbarrier.inval",
@@ -37033,7 +37078,7 @@
   {
     "name": "omp.task",
     "summary": "task construct",
-    "description": "The task construct defines an explicit task.\n\n    For definitions of \"undeferred task\", \"included task\", \"final task\" and\n    \"mergeable task\", please check OpenMP Specification.\n\n    When an `if` clause is present on a task construct, and the value of\n    `if_expr` evaluates to `false`, an \"undeferred task\" is generated, and the\n    encountering thread must suspend the current task region, for which\n    execution cannot be resumed until execution of the structured block that is\n    associated with the generated task is completed.\n\n    The `in_reduction` clause specifies that this particular task (among all the\n    tasks in current taskgroup, if any) participates in a reduction.\n    `in_reduction_byref` indicates whether each reduction variable should\n    be passed by value or by reference.The `affinity` clause specifies a locator list used as a hint for task\n    placement / scheduling affinity.The `allocate_vars` and `allocator_vars` parameters are parallel lists that\n    pair each allocated private value with the allocator used to obtain its\n    storage. When present, `allocate_alignments` has one entry per allocate\n    variable; zero means omitted alignment, and nonzero entries must be powers\n    of two.\n    `allocate_private_indices` maps each allocate variable to the corresponding\n    position in the operation's private variables.The `depend_kinds` and `depend_vars` arguments are variadic lists of values\n    that specify the dependencies of this particular task in relation to other\n    tasks.\n\n    The `depend_iterated_kinds` and `depend_iterated` arguments are variadic\n    lists of iterator-produced handles (from `omp.iterator`) that specify\n    dependencies expanded at runtime via an iterator modifier.When a `final` clause is present and the `final` clause expression evaluates\n    to `true`, the generated tasks will be final tasks. All task constructs\n    encountered during execution of a final task will generate final and\n    included tasks. The use of a variable in a `final` clause expression causes\n    an implicit reference to the variable in all enclosing constructs.When the `mergeable` clause is present, the tasks generated by the construct\n    are \"mergeable tasks\".The `priority` clause is a hint for the priority of the generated tasks.\n    The `priority` is a non-negative integer expression that provides a hint for\n    task execution order. Among all tasks ready to be executed, higher priority\n    tasks (those with a higher numerical value in the priority clause\n    expression) are recommended to execute before lower priority ones. The\n    default priority-value when no priority clause is specified should be\n    assumed to be zero (the lowest priority).If the `untied` clause is present on a task construct, any thread in the\n    team can resume the task region after a suspension. The `untied` clause is\n    ignored if a `final` clause is present on the same task construct and the\n    `final` expression evaluates to `true`, or if a task is an included task.The detach clause specifies that the task generated by the construct on which it appears is a\n\tdetachable task. A new allow-completion event is created and connected to the completion of the\n\tassociated task region. The original event-handle is updated to represent that allow-completion\n\tevent before the task data environment is created.",
+    "description": "The task construct defines an explicit task.\n\n    For definitions of \"undeferred task\", \"included task\", \"final task\" and\n    \"mergeable task\", please check OpenMP Specification.\n\n    When an `if` clause is present on a task construct, and the value of\n    `if_expr` evaluates to `false`, an \"undeferred task\" is generated, and the\n    encountering thread must suspend the current task region, for which\n    execution cannot be resumed until execution of the structured block that is\n    associated with the generated task is completed.\n\n    The `in_reduction` clause specifies that this particular task (among all the\n    tasks in current taskgroup, if any) participates in a reduction.\n    `in_reduction_byref` indicates whether each reduction variable should\n    be passed by value or by reference.The `affinity` clause specifies a locator list used as a hint for task\n    placement / scheduling affinity.The `allocate_vars` and `allocator_vars` parameters are parallel lists that\n    pair each allocated private value with the allocator used to obtain its\n    storage. When present, `allocate_alignments` has one entry per allocate\n    variable; zero means omitted alignment, and nonzero entries must be powers\n    of two.\n    `allocate_private_indices` maps each allocate variable to the corresponding\n    position in the operation's private variables.The `depend_kinds` and `depend_vars` arguments are variadic lists of values\n    that specify the dependencies of this particular task in relation to other\n    tasks.\n\n    The `depend_iterated_kinds` and `depend_iterated` arguments are variadic\n    lists of iterator-produced handles (from `omp.iterator`) that specify\n    dependencies expanded at runtime via an iterator modifier.When a `final` clause is present and the `final` clause expression evaluates\n    to `true`, the generated tasks will be final tasks. All task constructs\n    encountered during execution of a final task will generate final and\n    included tasks. The use of a variable in a `final` clause expression causes\n    an implicit reference to the variable in all enclosing constructs.When the `mergeable` clause is present, the tasks generated by the construct\n    are \"mergeable tasks\".The `priority` clause is a hint for the priority of the generated tasks.\n    The `priority` is a non-negative integer expression that provides a hint for\n    task execution order. Among all tasks ready to be executed, higher priority\n    tasks (those with a higher numerical value in the priority clause\n    expression) are recommended to execute before lower priority ones. The\n    default priority-value when no priority clause is specified should be\n    assumed to be zero (the lowest priority).The `threadset` clause specifies the set of threads that may execute the\n    generated task. When the policy is `omp_pool`, the task is eligible to be\n    executed by a free-agent thread. When the policy is `omp_team`, the task\n    may only be executed by a thread in the current team.If the `untied` clause is present on a task construct, any thread in the\n    team can resume the task region after a suspension. The `untied` clause is\n    ignored if a `final` clause is present on the same task construct and the\n    `final` expression evaluates to `true`, or if a task is an included task.The detach clause specifies that the task generated by the construct on which it appears is a\n\tdetachable task. A new allow-completion event is created and connected to the completion of the\n\tassociated task region. The original event-handle is updated to represent that allow-completion\n\tevent before the task data environment is created.",
     "operands": [
       { "name": "iterated", "type": "Variadic<OpenMP_IteratedType>" },
       { "name": "affinity_vars", "type": "Variadic<OpenMP_AffinityEntryType>" },
@@ -37058,12 +37103,13 @@
       { "name": "mergeable", "type": "UnitAttr" },
       { "name": "private_syms", "type": "OptionalAttr<TypedArrayAttrBase<SymbolRefAttr>>" },
       { "name": "private_needs_barrier", "type": "UnitAttr" },
+      { "name": "threadset", "type": "OptionalAttr<ThreadsetPolicyAttr{omp_pool|omp_team}>" },
       { "name": "untied", "type": "UnitAttr" }
     ],
     "regions": [
       { "name": "region", "type": "AnyRegion" }
     ],
-    "assemblyFormat": "oilist(`affinity` `(` custom<AffinityClause>($iterated, $affinity_vars,\n                                          type($iterated), type($affinity_vars)) `)`|`allocate` `(`\n      custom<AllocateAndAllocator>($allocate_vars, type($allocate_vars),\n                                   $allocator_vars, type($allocator_vars)) `)`\n      (`allocate_alignments` `(` $allocate_alignments^ `)`)?\n      (`allocate_private_indices` `(` $allocate_private_indices^ `)`)?|`depend` `(`\n      custom<DependVarList>($depend_vars, type($depend_vars), $depend_kinds,\n                            $depend_iterated, type($depend_iterated),\n                            $depend_iterated_kinds) `)`|`final` `(` $final `)`|`if` `(` $if_expr `)`|`mergeable` $mergeable|`priority` `(` $priority `:` type($priority) `)`|`untied` $untied|`detach` `(` $event_handle `:` type($event_handle) `)`)custom<InReductionPrivateRegion>(\n        $region, $in_reduction_vars, type($in_reduction_vars),\n        $in_reduction_byref, $in_reduction_syms, $private_vars,\n        type($private_vars), $private_syms, $private_needs_barrier) attr-dict"
+    "assemblyFormat": "oilist(`affinity` `(` custom<AffinityClause>($iterated, $affinity_vars,\n                                          type($iterated), type($affinity_vars)) `)`|`allocate` `(`\n      custom<AllocateAndAllocator>($allocate_vars, type($allocate_vars),\n                                   $allocator_vars, type($allocator_vars)) `)`\n      (`allocate_alignments` `(` $allocate_alignments^ `)`)?\n      (`allocate_private_indices` `(` $allocate_private_indices^ `)`)?|`depend` `(`\n      custom<DependVarList>($depend_vars, type($depend_vars), $depend_kinds,\n                            $depend_iterated, type($depend_iterated),\n                            $depend_iterated_kinds) `)`|`final` `(` $final `)`|`if` `(` $if_expr `)`|`mergeable` $mergeable|`priority` `(` $priority `:` type($priority) `)`|`threadset` `(` custom<ClauseAttr>($threadset) `)`|`untied` $untied|`detach` `(` $event_handle `:` type($event_handle) `)`)custom<InReductionPrivateRegion>(\n        $region, $in_reduction_vars, type($in_reduction_vars),\n        $in_reduction_byref, $in_reduction_syms, $private_vars,\n        type($private_vars), $private_syms, $private_needs_barrier) attr-dict"
   },
   {
     "name": "omp.taskgroup",
@@ -37123,7 +37169,7 @@
   {
     "name": "omp.taskloop.context",
     "summary": "OutlinableOpenMPOpInterface wrapper for taskloop construct",
-    "description": "The taskloop construct specifies that the iterations of one or more\n    associated loops will be executed in parallel using explicit tasks. The\n    iterations are distributed across tasks generated by the construct and\n    scheduled to be executed. The representation of this construct is split\n    between omp.taskloop.context and omp.taskloop.wrapper.\n\n    The taskloop construct must be a loop wrapper to support composite\n    constructs such as taskloop simd. Loop wrappers do not allow intervening\n    operations between the wrapper and wrapped loop(wrapper). But unlike other\n    loop wrappers, the body of taskloop is also outlined. This outlining means\n    that we need a way to represent the correct location of allocas for\n    temporaries created inside of the loop body. In order to achieve this,\n    the outlining part is represented in this operation: `omp.taskloop.context`,\n    and the loop wrapping is represented in `omp.taskloop.wrapper`. For example:\n    ```\n    omp.taskloop.context <clauses> {\n      // task-local stack allocations can go here\n      omp.taskloop.wrapper {\n        omp.loop_nest (%i1, %i2) : index = (%c0, %c0) to (%c10, %c10) step (%c1, %c1) {\n          %a = load %arrA[%i1, %i2] : memref<?x?xf32>\n          %b = load %arrB[%i1, %i2] : memref<?x?xf32>\n          %sum = arith.addf %a, %b : f32\n          store %sum, %arrC[%i1, %i2] : memref<?x?xf32>\n          omp.yield\n        }\n      }\n      omp.terminator\n    }\n    ```\n\n    The wrapped `omp.loop_nest` lower bounds, upper bounds and steps must be\n    either defined outside of the `omp.taskloop.context` region or produced by\n    pure, regionless operations inside the region that do not depend on block\n    arguments.\n\n    For definitions of \"undeferred task\", \"included task\", \"final task\" and\n    \"mergeable task\", please check OpenMP Specification.\n\n    When an `if` clause is present on a taskloop construct, and if the `if`\n    clause expression evaluates to `false`, undeferred tasks are generated. The\n    use of a variable in an `if` clause expression of a taskloop construct\n    causes an implicit reference to the variable in all enclosing constructs.The `allocate_vars` and `allocator_vars` parameters are parallel lists that\n    pair each allocated private value with the allocator used to obtain its\n    storage. When present, `allocate_alignments` has one entry per allocate\n    variable; zero means omitted alignment, and nonzero entries must be powers\n    of two.\n    `allocate_private_indices` maps each allocate variable to the corresponding\n    position in the operation's private variables.When a `final` clause is present and the `final` clause expression evaluates\n    to `true`, the generated tasks will be final tasks. All task constructs\n    encountered during execution of a final task will generate final and\n    included tasks. The use of a variable in a `final` clause expression causes\n    an implicit reference to the variable in all enclosing constructs.If a `grainsize` clause is present, the number of logical loop iterations\n    assigned to each generated task is greater than or equal to the minimum of\n    the value of the grain-size expression and the number of logical loop\n    iterations, but less than two times the value of the grain-size expression.When the `mergeable` clause is present, the tasks generated by the construct\n    are \"mergeable tasks\".By default, the taskloop construct executes as if it was enclosed in a\n    taskgroup construct with no statements or directives outside of the taskloop\n    construct. Thus, the taskloop construct creates an implicit taskgroup\n    region. If the `nogroup` clause is present, no implicit taskgroup region is\n    created.If `num_tasks` is specified, the taskloop construct creates as many tasks as\n    the minimum of the num-tasks expression and the number of logical loop\n    iterations. Each task must have at least one logical loop iteration.The `priority` clause is a hint for the priority of the generated tasks.\n    The `priority` is a non-negative integer expression that provides a hint for\n    task execution order. Among all tasks ready to be executed, higher priority\n    tasks (those with a higher numerical value in the priority clause\n    expression) are recommended to execute before lower priority ones. The\n    default priority-value when no priority clause is specified should be\n    assumed to be zero (the lowest priority).Reductions can be performed by specifying the reduction modifer\n    (`default`, `inscan` or `task`) in `reduction_mod`, reduction accumulator\n    variables in `reduction_vars`, symbols referring to reduction declarations\n    in the `reduction_syms` attribute, and whether the reduction variable\n    should be passed into the reduction region by value or by reference in\n    `reduction_byref`. Each reduction is identified by the accumulator it uses\n    and accumulators must not be repeated in the same reduction. A private\n    variable corresponding to the accumulator is used in place of the\n    accumulator inside the body of the operation. The reduction declaration\n    specifies how to combine the values from each iteration, section, team,\n    thread or simd lane defined by the operation's region into the final value,\n    which is available in the accumulator after they all complete.If the `untied` clause is present on a task construct, any thread in the\n    team can resume the task region after a suspension. The `untied` clause is\n    ignored if a `final` clause is present on the same task construct and the\n    `final` expression evaluates to `true`, or if a task is an included task.If an `in_reduction` clause is present on the taskloop construct, the\n    behavior is as if each generated task was defined by a task construct on\n    which an `in_reduction` clause with the same reduction operator and list\n    items is present. Thus, the generated tasks are participants of a reduction\n    previously defined by a reduction scoping clause. In this case, accumulator\n    variables are specified in `in_reduction_vars`, symbols referring to\n    reduction declarations in `in_reduction_syms` and `in_reduction_byref`\n    indicate for each reduction variable whether it should be passed by value or\n    by reference.\n\n    If a `reduction` clause is present on the taskloop construct, the behavior\n    is as if a `task_reduction` clause with the same reduction operator and list\n    items was applied to the implicit taskgroup construct enclosing the taskloop\n    construct. The taskloop construct executes as if each generated task was\n    defined by a task construct on which an `in_reduction` clause with the same\n    reduction operator and list items is present. Thus, the generated tasks are\n    participants of the reduction defined by the `task_reduction` clause that\n    was applied to the implicit taskgroup construct.",
+    "description": "The taskloop construct specifies that the iterations of one or more\n    associated loops will be executed in parallel using explicit tasks. The\n    iterations are distributed across tasks generated by the construct and\n    scheduled to be executed. The representation of this construct is split\n    between omp.taskloop.context and omp.taskloop.wrapper.\n\n    The taskloop construct must be a loop wrapper to support composite\n    constructs such as taskloop simd. Loop wrappers do not allow intervening\n    operations between the wrapper and wrapped loop(wrapper). But unlike other\n    loop wrappers, the body of taskloop is also outlined. This outlining means\n    that we need a way to represent the correct location of allocas for\n    temporaries created inside of the loop body. In order to achieve this,\n    the outlining part is represented in this operation: `omp.taskloop.context`,\n    and the loop wrapping is represented in `omp.taskloop.wrapper`. For example:\n    ```\n    omp.taskloop.context <clauses> {\n      // task-local stack allocations can go here\n      omp.taskloop.wrapper {\n        omp.loop_nest (%i1, %i2) : index = (%c0, %c0) to (%c10, %c10) step (%c1, %c1) {\n          %a = load %arrA[%i1, %i2] : memref<?x?xf32>\n          %b = load %arrB[%i1, %i2] : memref<?x?xf32>\n          %sum = arith.addf %a, %b : f32\n          store %sum, %arrC[%i1, %i2] : memref<?x?xf32>\n          omp.yield\n        }\n      }\n      omp.terminator\n    }\n    ```\n\n    The wrapped `omp.loop_nest` lower bounds, upper bounds and steps must be\n    either defined outside of the `omp.taskloop.context` region or produced by\n    pure, regionless operations inside the region that do not depend on block\n    arguments.\n\n    For definitions of \"undeferred task\", \"included task\", \"final task\" and\n    \"mergeable task\", please check OpenMP Specification.\n\n    When an `if` clause is present on a taskloop construct, and if the `if`\n    clause expression evaluates to `false`, undeferred tasks are generated. The\n    use of a variable in an `if` clause expression of a taskloop construct\n    causes an implicit reference to the variable in all enclosing constructs.The `allocate_vars` and `allocator_vars` parameters are parallel lists that\n    pair each allocated private value with the allocator used to obtain its\n    storage. When present, `allocate_alignments` has one entry per allocate\n    variable; zero means omitted alignment, and nonzero entries must be powers\n    of two.\n    `allocate_private_indices` maps each allocate variable to the corresponding\n    position in the operation's private variables.When a `final` clause is present and the `final` clause expression evaluates\n    to `true`, the generated tasks will be final tasks. All task constructs\n    encountered during execution of a final task will generate final and\n    included tasks. The use of a variable in a `final` clause expression causes\n    an implicit reference to the variable in all enclosing constructs.If a `grainsize` clause is present, the number of logical loop iterations\n    assigned to each generated task is greater than or equal to the minimum of\n    the value of the grain-size expression and the number of logical loop\n    iterations, but less than two times the value of the grain-size expression.When the `mergeable` clause is present, the tasks generated by the construct\n    are \"mergeable tasks\".By default, the taskloop construct executes as if it was enclosed in a\n    taskgroup construct with no statements or directives outside of the taskloop\n    construct. Thus, the taskloop construct creates an implicit taskgroup\n    region. If the `nogroup` clause is present, no implicit taskgroup region is\n    created.If `num_tasks` is specified, the taskloop construct creates as many tasks as\n    the minimum of the num-tasks expression and the number of logical loop\n    iterations. Each task must have at least one logical loop iteration.The `priority` clause is a hint for the priority of the generated tasks.\n    The `priority` is a non-negative integer expression that provides a hint for\n    task execution order. Among all tasks ready to be executed, higher priority\n    tasks (those with a higher numerical value in the priority clause\n    expression) are recommended to execute before lower priority ones. The\n    default priority-value when no priority clause is specified should be\n    assumed to be zero (the lowest priority).Reductions can be performed by specifying the reduction modifer\n    (`default`, `inscan` or `task`) in `reduction_mod`, reduction accumulator\n    variables in `reduction_vars`, symbols referring to reduction declarations\n    in the `reduction_syms` attribute, and whether the reduction variable\n    should be passed into the reduction region by value or by reference in\n    `reduction_byref`. Each reduction is identified by the accumulator it uses\n    and accumulators must not be repeated in the same reduction. A private\n    variable corresponding to the accumulator is used in place of the\n    accumulator inside the body of the operation. The reduction declaration\n    specifies how to combine the values from each iteration, section, team,\n    thread or simd lane defined by the operation's region into the final value,\n    which is available in the accumulator after they all complete.The `threadset` clause specifies the set of threads that may execute the\n    generated task. When the policy is `omp_pool`, the task is eligible to be\n    executed by a free-agent thread. When the policy is `omp_team`, the task\n    may only be executed by a thread in the current team.If the `untied` clause is present on a task construct, any thread in the\n    team can resume the task region after a suspension. The `untied` clause is\n    ignored if a `final` clause is present on the same task construct and the\n    `final` expression evaluates to `true`, or if a task is an included task.If an `in_reduction` clause is present on the taskloop construct, the\n    behavior is as if each generated task was defined by a task construct on\n    which an `in_reduction` clause with the same reduction operator and list\n    items is present. Thus, the generated tasks are participants of a reduction\n    previously defined by a reduction scoping clause. In this case, accumulator\n    variables are specified in `in_reduction_vars`, symbols referring to\n    reduction declarations in `in_reduction_syms` and `in_reduction_byref`\n    indicate for each reduction variable whether it should be passed by value or\n    by reference.\n\n    If a `reduction` clause is present on the taskloop construct, the behavior\n    is as if a `task_reduction` clause with the same reduction operator and list\n    items was applied to the implicit taskgroup construct enclosing the taskloop\n    construct. The taskloop construct executes as if each generated task was\n    defined by a task construct on which an `in_reduction` clause with the same\n    reduction operator and list items is present. Thus, the generated tasks are\n    participants of the reduction defined by the `task_reduction` clause that\n    was applied to the implicit taskgroup construct.",
     "operands": [
       { "name": "allocate_vars", "type": "Variadic<AnyType>" },
       { "name": "allocator_vars", "type": "Variadic<AnyType>" },
@@ -37150,12 +37196,13 @@
       { "name": "reduction_mod", "type": "OptionalAttr<ReductionModifierAttr{defaultmod|inscan|task}>" },
       { "name": "reduction_byref", "type": "OptionalAttr<DenseBoolArrayAttr>" },
       { "name": "reduction_syms", "type": "OptionalAttr<TypedArrayAttrBase<SymbolRefAttr>>" },
+      { "name": "threadset", "type": "OptionalAttr<ThreadsetPolicyAttr{omp_pool|omp_team}>" },
       { "name": "untied", "type": "UnitAttr" }
     ],
     "regions": [
       { "name": "region", "type": "AnyRegion" }
     ],
-    "assemblyFormat": "oilist(`allocate` `(`\n      custom<AllocateAndAllocator>($allocate_vars, type($allocate_vars),\n                                   $allocator_vars, type($allocator_vars)) `)`\n      (`allocate_alignments` `(` $allocate_alignments^ `)`)?\n      (`allocate_private_indices` `(` $allocate_private_indices^ `)`)?|`final` `(` $final `)`|`grainsize` `(` custom<GrainsizeClause>($grainsize_mod , $grainsize, type($grainsize)) `)`|`if` `(` $if_expr `)`|`mergeable` $mergeable|`nogroup` $nogroup|`num_tasks` `(` custom<NumTasksClause>($num_tasks_mod , $num_tasks, type($num_tasks)) `)`|`priority` `(` $priority `:` type($priority) `)`|`untied` $untied)custom<InReductionPrivateReductionRegion>(\n        $region, $in_reduction_vars, type($in_reduction_vars),\n        $in_reduction_byref, $in_reduction_syms, $private_vars,\n        type($private_vars), $private_syms, $private_needs_barrier,\n        $reduction_mod, $reduction_vars, type($reduction_vars),\n        $reduction_byref, $reduction_syms) attr-dict"
+    "assemblyFormat": "oilist(`allocate` `(`\n      custom<AllocateAndAllocator>($allocate_vars, type($allocate_vars),\n                                   $allocator_vars, type($allocator_vars)) `)`\n      (`allocate_alignments` `(` $allocate_alignments^ `)`)?\n      (`allocate_private_indices` `(` $allocate_private_indices^ `)`)?|`final` `(` $final `)`|`grainsize` `(` custom<GrainsizeClause>($grainsize_mod , $grainsize, type($grainsize)) `)`|`if` `(` $if_expr `)`|`mergeable` $mergeable|`nogroup` $nogroup|`num_tasks` `(` custom<NumTasksClause>($num_tasks_mod , $num_tasks, type($num_tasks)) `)`|`priority` `(` $priority `:` type($priority) `)`|`threadset` `(` custom<ClauseAttr>($threadset) `)`|`untied` $untied)custom<InReductionPrivateReductionRegion>(\n        $region, $in_reduction_vars, type($in_reduction_vars),\n        $in_reduction_byref, $in_reduction_syms, $private_vars,\n        type($private_vars), $private_syms, $private_needs_barrier,\n        $reduction_mod, $reduction_vars, type($reduction_vars),\n        $reduction_byref, $reduction_syms) attr-dict"
   },
   {
     "name": "omp.taskloop.wrapper",
@@ -69736,7 +69783,8 @@
     "description": "Represents an asset in the saved model that points to an external file. It\n    is a scalar string tensor and it is passed as an argument to the session\n    initializer functions.\n\n    The `sym_name` represents the symbol table name used for internal IR\n    references.\n\n    The `filename` attribute contains the file path to the asset file and it is\n    relative to saved model directory.",
     "attributes": [
       { "name": "sym_name", "type": "StrAttr" },
-      { "name": "filename", "type": "StrAttr" }
+      { "name": "filename", "type": "StrAttr" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" }
     ]
   },
   {
@@ -69747,7 +69795,8 @@
       { "name": "sym_name", "type": "StrAttr" },
       { "name": "value", "type": "OptionalAttr<ElementsAttr>" },
       { "name": "type", "type": "TypeAttr" },
-      { "name": "is_mutable", "type": "UnitAttr" }
+      { "name": "is_mutable", "type": "UnitAttr" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" }
     ]
   },
   {
@@ -82167,7 +82216,8 @@
       { "name": "gradient", "type": "OptionalAttr<FlatSymbolRefAttr>" },
       { "name": "resource_arg_unique_ids_keys", "type": "OptionalAttr<I32ElementsAttr>" },
       { "name": "resource_arg_unique_ids_values", "type": "OptionalAttr<I32ElementsAttr>" },
-      { "name": "control_output", "type": "OptionalAttr<TypedArrayAttrBase<StrAttr>>" }
+      { "name": "control_output", "type": "OptionalAttr<TypedArrayAttrBase<StrAttr>>" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" }
     ],
     "regions": [
       { "name": "body", "type": "AnyRegion" }
@@ -85044,7 +85094,8 @@
       { "name": "function_type", "type": "TypeAttrOf<FunctionType>" },
       { "name": "sym_name", "type": "StrAttr" },
       { "name": "arg_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
-      { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" }
+      { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" }
     ],
     "regions": [
       { "name": "body", "type": "VariadicRegion<AnyRegion>" }
@@ -116540,7 +116591,7 @@
     "summary": "inline assembly applying an elementwise operation to a group of packed elements.",
     "description": "Runs an inline asm block to generate one or more tensors.\n\n    The asm block is given `packed_element` elements at a time.  Exactly which\n    elems it receives is unspecified.",
     "operands": [
-      { "name": "args", "type": "Variadic<AnyTypeOf<[ TT_Type ]>>" }
+      { "name": "args", "type": "Variadic<AnyType>" }
     ],
     "results": [
       { "name": "result", "type": "Variadic<TT_Type>" }
@@ -117277,6 +117328,23 @@
       { "name": "shared_cluster_state", "type": "OptionalAttr<UnitAttr>" }
     ],
     "assemblyFormat": "attr-dict `:` qualified(type($result))"
+  },
+  {
+    "name": "ttg.inline_asm",
+    "summary": "Run inline assembly once per thread with explicit tensor layouts",
+    "description": "Each tensor operand is unpacked into all of its per-thread elements in\n    register order, including replicated register positions. Scalars and memory\n    descriptors contribute one operand; descriptors are passed as i32 addresses.\n    Results are packed according to their explicit types and layouts. There is\n    no elementwise broadcasting, chunking, or subword packing.\n\n    Assembly with memory descriptor operands must be impure. Descriptor accesses\n    are not modeled by the compiler. The caller must provide all synchronization\n    for them, including barriers, fences, and asynchronous completion before\n    storage reuse. Accesses must remain within the descriptor views.\n    Scalar results must be uniform and replicated tensor elements must agree.",
+    "operands": [
+      { "name": "args", "type": "Variadic<AnyTypeOf<[ TT_Type, TTG_MemDescType ]>>" }
+    ],
+    "results": [
+      { "name": "result", "type": "Variadic<TT_Type>" }
+    ],
+    "attributes": [
+      { "name": "asm_string", "type": "StrAttr" },
+      { "name": "constraints", "type": "StrAttr" },
+      { "name": "pure", "type": "BoolAttr" }
+    ],
+    "assemblyFormat": "$asm_string attr-dict ($args^)? `:` functional-type($args, $result)"
   },
   {
     "name": "ttg.local_alloc",
@@ -125482,6 +125550,22 @@
     "attributes": [
       { "name": "initial_value", "type": "OptionalAttr<UI32Attr>" },
       { "name": "core_range_set", "type": "TTNN_CoreRangeSetAttr" }
+    ]
+  },
+  {
+    "name": "ttnn.cross_entropy_bw",
+    "summary": "Cross entropy loss backward pass (ttml).",
+    "description": "Gradient of the cross entropy loss w.r.t. the logits, backed by the ttml\n      metal op `ttml::metal::cross_entropy_bw`. Computes\n\n        d_input = (softmax(input) - one_hot(target)) * scaler * grad\n\n      `ttml::metal::cross_entropy_bw` is a host-side composition: the device\n      primitive produces `(softmax(input) - one_hot(target)) * scaler`, and a\n      `ttnn::multiply` scales it by `grad`.\n\n      `input` holds the logits as `(N, 1, H, W)` and must be bf16: the kernel\n      hardcodes its circular buffers to `Float16_b`. `target` holds the class\n      indices as `(N, H)` and reaches the kernel as row-major uint32. `grad` is\n      the incoming gradient, restricted to `(1, 1, 1, 1)`.\n\n      The result is shaped like `input`.",
+    "operands": [
+      { "name": "input", "type": "AnyRankedTensor" },
+      { "name": "target", "type": "AnyRankedTensor" },
+      { "name": "grad", "type": "AnyRankedTensor" }
+    ],
+    "results": [
+      { "name": "result", "type": "AnyRankedTensor" }
+    ],
+    "attributes": [
+      { "name": "scaler", "type": "F32Attr" }
     ]
   },
   {
@@ -134038,6 +134122,38 @@
     "hasCustomAssemblyFormat": true
   },
   {
+    "name": "vm.fpowi.f32",
+    "summary": "Floating point raised to the integer power of operation.",
+    "operands": [
+      { "name": "lhs", "type": "F32" },
+      { "name": "rhs", "type": "I64" }
+    ],
+    "results": [
+      { "name": "result", "type": "F32" }
+    ],
+    "traits": [
+      { "type": "AllTypesMatch<['lhs', 'result']>" }
+    ],
+    "assemblyFormat": "operands attr-dict `:` type($result)",
+    "hasCustomAssemblyFormat": true
+  },
+  {
+    "name": "vm.fpowi.f64",
+    "summary": "Floating point raised to the integer power of operation.",
+    "operands": [
+      { "name": "lhs", "type": "F64" },
+      { "name": "rhs", "type": "I64" }
+    ],
+    "results": [
+      { "name": "result", "type": "F64" }
+    ],
+    "traits": [
+      { "type": "AllTypesMatch<['lhs', 'result']>" }
+    ],
+    "assemblyFormat": "operands attr-dict `:` type($result)",
+    "hasCustomAssemblyFormat": true
+  },
+  {
     "name": "vm.func",
     "summary": "Function defined with VM control flow ops.",
     "description": "Represents a function containing VM ops and those of compatible dialects.\n    All flow control is performed by VM ops.",
@@ -139635,7 +139751,8 @@
       { "name": "function_type", "type": "TypeAttrOf<FunctionType>" },
       { "name": "arg_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
       { "name": "res_attrs", "type": "OptionalAttr<TypedArrayAttrBase<DictionaryAttr>>" },
-      { "name": "num_opaque_args", "type": "DefaultValuedAttr<I32Attr, 0>" }
+      { "name": "num_opaque_args", "type": "DefaultValuedAttr<I32Attr, 0>" },
+      { "name": "sym_visibility", "type": "OptionalAttr<StrAttr>" }
     ],
     "regions": [
       { "name": "body", "type": "SizedRegion<1>" }

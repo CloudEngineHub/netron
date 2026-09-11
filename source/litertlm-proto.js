@@ -790,6 +790,15 @@ litert.lm.proto.Lfm2 = class Lfm2 {
                 case 11:
                     message.normalization_rescale_factor = reader.float();
                     break;
+                case 12:
+                    message.code_fence_start = reader.string();
+                    break;
+                case 13:
+                    message.code_fence_end = reader.string();
+                    break;
+                case 14:
+                    message.escape_fence_strings = reader.bool();
+                    break;
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -808,6 +817,9 @@ litert.lm.proto.Lfm2.prototype.pooling_kernel_size = 0;
 litert.lm.proto.Lfm2.prototype.image_tensor_height = 0;
 litert.lm.proto.Lfm2.prototype.image_tensor_width = 0;
 litert.lm.proto.Lfm2.prototype.normalization_rescale_factor = 0;
+litert.lm.proto.Lfm2.prototype.code_fence_start = "";
+litert.lm.proto.Lfm2.prototype.code_fence_end = "";
+litert.lm.proto.Lfm2.prototype.escape_fence_strings = false;
 
 litert.lm.proto.MiniCPM5 = class MiniCPM5 {
 

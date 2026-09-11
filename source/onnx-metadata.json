@@ -47655,13 +47655,13 @@
       {
         "name": "key_cache",
         "type": "T_CACHE",
-        "description": "Block-based key cache with shape (num_blocks, block_size, kv_num_heads, head_size). This is updated in place within the op. When 'kv_cache_layout' is 'LATENT' this is the only cache, and V is read from its leading v_head_size channels."
+        "description": "Block-based key cache with shape (num_blocks, block_size, kv_num_heads, cache_head_size), where cache_head_size is (head_size + 1) / 2 for packed INT4 and head_size otherwise. This is updated in place within the op. When 'kv_cache_layout' is 'LATENT' this is the only cache, and V is read from its leading v_head_size channels."
       },
       {
         "name": "value_cache",
         "type": "T_CACHE",
         "option": "optional",
-        "description": "Block-based value cache with shape (num_blocks, block_size, kv_num_heads, head_size). This is updated in place within the op. This should be the same shape as key_cache. Must be absent when 'kv_cache_layout' is 'LATENT'."
+        "description": "Block-based value cache with shape (num_blocks, block_size, kv_num_heads, cache_head_size), where cache_head_size is (head_size + 1) / 2 for packed INT4 and head_size otherwise. This is updated in place within the op. This should be the same shape as key_cache. Must be absent when 'kv_cache_layout' is 'LATENT'."
       },
       {
         "name": "cumulative_sequence_length",
@@ -47745,13 +47745,13 @@
         "name": "key_cache_out",
         "type": "T_CACHE",
         "option": "optional",
-        "description": "Block-based key cache with shape (num_blocks, block_size, kv_num_heads, head_size). This is always the same tensor as key_cache."
+        "description": "Aliases key_cache with the same shape and element type, including its packed dimension for INT4."
       },
       {
         "name": "value_cache_out",
         "type": "T_CACHE",
         "option": "optional",
-        "description": "Block-based value cache with shape (num_blocks, block_size, kv_num_heads, head_size). This is always the same tensor as value_cache. Must be absent when 'kv_cache_layout' is 'LATENT'."
+        "description": "Aliases value_cache with the same shape and element type, including its packed dimension for INT4. Must be absent when 'kv_cache_layout' is 'LATENT'."
       }
     ],
     "min_output": 1,
@@ -47774,7 +47774,8 @@
           "tensor(float16)",
           "tensor(bfloat16)",
           "tensor(int8)",
-          "tensor(float8e4m3fn)"
+          "tensor(float8e4m3fn)",
+          "tensor(uint8)"
         ]
       },
       {
@@ -74418,8 +74419,20 @@
         "code": "node_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=1,\n)\n\nx = np.array([0], dtype=np.int64)\ny, indices, inverse_indices, counts = np.unique(x, True, True, True)\nindices, inverse_indices, counts = specify_int64(\n    indices, inverse_indices, counts\n)\n# behavior changed with numpy >= 2.0\ninverse_indices = inverse_indices.reshape(-1)\n# print(y)\n# [0]\n# print(indices)\n# [0]\n# print(inverse_indices)\n# [0]\n# print(counts)\n# [1]\n\nexpect(\n    node_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_length_1\",\n    output_type_protos=unique_output_types(x),\n)"
       },
       {
+        "summary": "not_sorted_single_output",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    sorted=0,\n)\n\n# Y keeps the order of first occurrence even when the optional outputs\n# are not requested.\nx = np.array([2.0, 1.0, 1.0, 3.0, 4.0, 3.0], dtype=np.float32)\ny = np.array([2.0, 1.0, 3.0, 4.0], dtype=np.float32)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y],\n    name=\"test_unique_not_sorted_single_output\",\n    output_type_protos=unique_output_types(x)[:1],\n)"
+      },
+      {
+        "summary": "not_sorted_with_axis",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n    axis=1,\n)\n\n# The unique columns are [3.0, 4.0] and [1.0, 2.0], kept in the order\n# they first appear in X instead of ascending order. indices point into\n# the columns of X, inverse_indices and counts follow the order of Y.\nx = np.array([[3.0, 1.0, 3.0], [4.0, 2.0, 4.0]], dtype=np.float32)\ny = np.array([[3.0, 1.0], [4.0, 2.0]], dtype=np.float32)\nindices = np.array([0, 1], dtype=np.int64)\ninverse_indices = np.array([0, 1, 0], dtype=np.int64)\ncounts = np.array([2, 1], dtype=np.int64)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_with_axis\",\n    output_type_protos=unique_output_types(x, axis=1),\n)"
+      },
+      {
         "summary": "not_sorted_without_axis",
         "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n)\n# numpy unique does not retain original order (it sorts the output unique values)\n# https://github.com/numpy/numpy/issues/8621\n# we need to recover unsorted output and indices\nx = np.array([2.0, 1.0, 1.0, 3.0, 4.0, 3.0], dtype=np.float32)\ny, indices, inverse_indices, counts = np.unique(x, True, True, True)\n\n# prepare index mapping from sorted to unsorted\nargsorted_indices = np.argsort(indices)\ninverse_indices_map = dict(\n    zip(argsorted_indices, np.arange(len(argsorted_indices)), strict=True)\n)\n\nindices = indices[argsorted_indices]\ny = np.take(x, indices, axis=0)\ninverse_indices = np.asarray(\n    [inverse_indices_map[i] for i in inverse_indices], dtype=np.int64\n)\ncounts = counts[argsorted_indices]\nindices, inverse_indices, counts = specify_int64(\n    indices, inverse_indices, counts\n)\n# print(y)\n# [2.0, 1.0, 3.0, 4.0]\n# print(indices)\n# [0 1 3 4]\n# print(inverse_indices)\n# [0, 1, 1, 2, 3, 2]\n# print(counts)\n# [1, 2, 2, 1]\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_without_axis\",\n    output_type_protos=unique_output_types(x),\n)"
+      },
+      {
+        "summary": "not_sorted_without_axis_2d",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n)\n\n# X is flattened to [2.0, 1.0, 1.0, 3.0] because axis is not set, and Y\n# holds its unique values in order of first occurrence. indices point\n# into the flattened X, inverse_indices and counts follow the order of Y.\nx = np.array([[2.0, 1.0], [1.0, 3.0]], dtype=np.float32)\ny = np.array([2.0, 1.0, 3.0], dtype=np.float32)\nindices = np.array([0, 1, 3], dtype=np.int64)\ninverse_indices = np.array([0, 1, 1, 2], dtype=np.int64)\ncounts = np.array([1, 2, 1], dtype=np.int64)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_without_axis_2d\",\n    output_type_protos=unique_output_types(x),\n)"
       },
       {
         "summary": "sorted_with_axis",
@@ -74530,8 +74543,20 @@
         "code": "node_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=1,\n)\n\nx = np.array([0], dtype=np.int64)\ny, indices, inverse_indices, counts = np.unique(x, True, True, True)\nindices, inverse_indices, counts = specify_int64(\n    indices, inverse_indices, counts\n)\n# behavior changed with numpy >= 2.0\ninverse_indices = inverse_indices.reshape(-1)\n# print(y)\n# [0]\n# print(indices)\n# [0]\n# print(inverse_indices)\n# [0]\n# print(counts)\n# [1]\n\nexpect(\n    node_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_length_1\",\n    output_type_protos=unique_output_types(x),\n)"
       },
       {
+        "summary": "not_sorted_single_output",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    sorted=0,\n)\n\n# Y keeps the order of first occurrence even when the optional outputs\n# are not requested.\nx = np.array([2.0, 1.0, 1.0, 3.0, 4.0, 3.0], dtype=np.float32)\ny = np.array([2.0, 1.0, 3.0, 4.0], dtype=np.float32)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y],\n    name=\"test_unique_not_sorted_single_output\",\n    output_type_protos=unique_output_types(x)[:1],\n)"
+      },
+      {
+        "summary": "not_sorted_with_axis",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n    axis=1,\n)\n\n# The unique columns are [3.0, 4.0] and [1.0, 2.0], kept in the order\n# they first appear in X instead of ascending order. indices point into\n# the columns of X, inverse_indices and counts follow the order of Y.\nx = np.array([[3.0, 1.0, 3.0], [4.0, 2.0, 4.0]], dtype=np.float32)\ny = np.array([[3.0, 1.0], [4.0, 2.0]], dtype=np.float32)\nindices = np.array([0, 1], dtype=np.int64)\ninverse_indices = np.array([0, 1, 0], dtype=np.int64)\ncounts = np.array([2, 1], dtype=np.int64)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_with_axis\",\n    output_type_protos=unique_output_types(x, axis=1),\n)"
+      },
+      {
         "summary": "not_sorted_without_axis",
         "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n)\n# numpy unique does not retain original order (it sorts the output unique values)\n# https://github.com/numpy/numpy/issues/8621\n# we need to recover unsorted output and indices\nx = np.array([2.0, 1.0, 1.0, 3.0, 4.0, 3.0], dtype=np.float32)\ny, indices, inverse_indices, counts = np.unique(x, True, True, True)\n\n# prepare index mapping from sorted to unsorted\nargsorted_indices = np.argsort(indices)\ninverse_indices_map = dict(\n    zip(argsorted_indices, np.arange(len(argsorted_indices)), strict=True)\n)\n\nindices = indices[argsorted_indices]\ny = np.take(x, indices, axis=0)\ninverse_indices = np.asarray(\n    [inverse_indices_map[i] for i in inverse_indices], dtype=np.int64\n)\ncounts = counts[argsorted_indices]\nindices, inverse_indices, counts = specify_int64(\n    indices, inverse_indices, counts\n)\n# print(y)\n# [2.0, 1.0, 3.0, 4.0]\n# print(indices)\n# [0 1 3 4]\n# print(inverse_indices)\n# [0, 1, 1, 2, 3, 2]\n# print(counts)\n# [1, 2, 2, 1]\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_without_axis\",\n    output_type_protos=unique_output_types(x),\n)"
+      },
+      {
+        "summary": "not_sorted_without_axis_2d",
+        "code": "node_not_sorted = onnx.helper.make_node(\n    \"Unique\",\n    inputs=[\"X\"],\n    outputs=[\"Y\", \"indices\", \"inverse_indices\", \"counts\"],\n    sorted=0,\n)\n\n# X is flattened to [2.0, 1.0, 1.0, 3.0] because axis is not set, and Y\n# holds its unique values in order of first occurrence. indices point\n# into the flattened X, inverse_indices and counts follow the order of Y.\nx = np.array([[2.0, 1.0], [1.0, 3.0]], dtype=np.float32)\ny = np.array([2.0, 1.0, 3.0], dtype=np.float32)\nindices = np.array([0, 1, 3], dtype=np.int64)\ninverse_indices = np.array([0, 1, 1, 2], dtype=np.int64)\ncounts = np.array([1, 2, 1], dtype=np.int64)\n\nexpect(\n    node_not_sorted,\n    inputs=[x],\n    outputs=[y, indices, inverse_indices, counts],\n    name=\"test_unique_not_sorted_without_axis_2d\",\n    output_type_protos=unique_output_types(x),\n)"
       },
       {
         "summary": "sorted_with_axis",
