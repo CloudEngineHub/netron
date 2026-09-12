@@ -80449,7 +80449,8 @@
       { "name": "prediction_names", "type": "TypedArrayAttrBase<StrAttr>" },
       { "name": "training", "type": "BoolAttr" },
       { "name": "file_path", "type": "StrAttr" },
-      { "name": "write_vector_predictions", "type": "DefaultValuedOptionalAttr<BoolAttr, false>" }
+      { "name": "write_vector_predictions", "type": "DefaultValuedOptionalAttr<BoolAttr, false>" },
+      { "name": "sample_rate", "type": "DefaultValuedOptionalAttr<F32Attr, 1.0f>" }
     ]
   },
   {
@@ -111819,7 +111820,7 @@
     "attributes": [
       { "name": "useNvGpu", "type": "DefaultValuedAttr<BoolAttr, true>" }
     ],
-    "assemblyFormat": "attr-dict"
+    "assemblyFormat": "prop-dict attr-dict"
   },
   {
     "name": "transform.apply_patterns.iree.unroll_multi_mma",
@@ -112723,7 +112724,7 @@
       { "name": "workgroup_size", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" },
       { "name": "subgroup_size", "type": "DefaultValuedOptionalAttr<I64Attr, 64>" }
     ],
-    "assemblyFormat": "$target (`test_conversion` $test_conversion^)?\n      attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target (`test_conversion` $test_conversion^)?\n      prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.apply_licm",
@@ -112747,7 +112748,7 @@
       { "name": "test_analysis_only", "type": "UnitAttr" },
       { "name": "print_conflicts", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "attr-dict $target `:` functional-type($target, results)"
+    "assemblyFormat": "prop-dict attr-dict $target `:` functional-type($target, results)"
   },
   {
     "name": "transform.iree.convert_to_multi_mma",
@@ -112798,7 +112799,7 @@
     "attributes": [
       { "name": "use_mma_sync", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$target\n    prop-dict attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.create_matmul_mfma_tile_sizes",
@@ -112824,7 +112825,7 @@
     "attributes": [
       { "name": "tile_size", "type": "OptionalAttr<I64Attr>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.distribute_inner_tiled",
@@ -112955,7 +112956,7 @@
     "attributes": [
       { "name": "address_space", "type": "OptionalAttr<AnyAttr>" }
     ],
-    "assemblyFormat": "$producer `into` $consumer attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$producer `into` $consumer prop-dict attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.gpu_distribute_shared_memory_copy",
@@ -113236,7 +113237,7 @@
       { "name": "peel_epilogue", "type": "UnitAttr" },
       { "name": "use_mma_sync", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$for_op\n    attr-dict\n    `:` functional-type(operands, results)"
+    "assemblyFormat": "$for_op\n    prop-dict attr-dict\n    `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.populate_workgroup_count_region_using_num_threads_slice",
@@ -113281,7 +113282,7 @@
     "attributes": [
       { "name": "padding_size_bits", "type": "DefaultValuedOptionalAttr<I64Attr, 64>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type(operands, results)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "transform.iree.region_to_workgroups",
@@ -113355,7 +113356,7 @@
       { "name": "workgroup_size", "type": "DefaultValuedAttr<DenseI64ArrayAttr, {}>" },
       { "name": "subgroup_size", "type": "DefaultValuedOptionalAttr<I64Attr, 64>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` type($target)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` type($target)"
   },
   {
     "name": "transform.iree.vector.to_warp_execute_on_lane_0",
@@ -113369,7 +113370,7 @@
     "attributes": [
       { "name": "warp_size", "type": "DefaultValuedAttr<I64Attr, {}>" }
     ],
-    "assemblyFormat": "$target attr-dict `:` functional-type($target, $result)"
+    "assemblyFormat": "$target prop-dict attr-dict `:` functional-type($target, $result)"
   },
   {
     "name": "transform.iree.vector.vector_to_mma_conversion",
@@ -113381,7 +113382,7 @@
       { "name": "use_mma_sync", "type": "UnitAttr" },
       { "name": "use_wmma", "type": "UnitAttr" }
     ],
-    "assemblyFormat": "$target\n    attr-dict\n    `:` functional-type($target, results)"
+    "assemblyFormat": "$target\n    prop-dict attr-dict\n    `:` functional-type($target, results)"
   },
   {
     "name": "transform.iree.vector.warp_distribute",

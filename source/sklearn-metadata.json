@@ -1087,7 +1087,7 @@
       },
       {
         "default": null,
-        "description": "Used when ``solver`` == 'sag', 'saga' or 'liblinear' to shuffle the\ndata. See :term:`Glossary <random_state>` for details.\n",
+        "description": "Only used for `solver` == 'sag', 'saga' or 'liblinear' to shuffle the\ndata. It has no effect on the other solvers.\nSee :term:`Glossary <random_state>` for details.\n",
         "name": "random_state",
         "type": "int32"
       },
@@ -1313,7 +1313,7 @@
       },
       {
         "default": null,
-        "description": "Used when ``solver`` == 'sag', 'saga' or 'liblinear' to shuffle the\ndata. See :term:`Glossary <random_state>` for details.\n",
+        "description": "Only used for `solver` == 'sag', 'saga' or 'liblinear' to shuffle the\ndata. It has no effect on the other solvers.\nSee :term:`Glossary <random_state>` for details.\n",
         "name": "random_state",
         "optional": true,
         "type": "int32"

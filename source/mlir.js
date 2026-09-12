@@ -17998,6 +17998,7 @@ _.spirv.SPIRVDialect = class extends _.Dialect {
                     result.addAttribute('memory_access', memoryAccess.join(', '));
                 }
             }
+            parser.parseOptionalAttrDict(result.attributes);
             if (parser.parseOptionalColon()) {
                 const type = parser.parseType();
                 const ptrType = new _.spirv.PointerType(type, storageClass);
