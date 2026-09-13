@@ -760,6 +760,7 @@ gguf.BinaryReader = class {
 
     constructor(reader) {
         this._reader = reader;
+        this._decoder = new TextDecoder('utf-8', { ignoreBOM: true });
     }
 
     get length() {
@@ -829,7 +830,7 @@ gguf.BinaryReader = class {
     string() {
         const size = this.uint64().toNumber();
         const buffer = this.read(size);
-        return String.fromCharCode.apply(null, buffer);
+        return this._decoder.decode(buffer);
     }
 
     scalar(type) {
