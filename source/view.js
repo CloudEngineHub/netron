@@ -4268,7 +4268,7 @@ view.TensorView = class extends view.Expander {
                 if (tensor.empty) {
                     content.innerHTML = 'Tensor data is empty.';
                 } else {
-                    content.innerHTML = tensor.toString();
+                    content.textContent = tensor.toString();
                     if (this._host.save && value.type.shape && value.type.shape.dimensions && value.type.shape.dimensions.length > 0) {
                         this._saveButton = this.createElement('div', 'sidebar-item-value-button');
                         this._saveButton.classList.add('sidebar-item-value-button-context');
@@ -4281,7 +4281,7 @@ view.TensorView = class extends view.Expander {
                     }
                 }
             }).catch((error) => {
-                content.innerHTML = error.message;
+                content.textContent = error.message;
             });
         }
         return content;
@@ -5314,7 +5314,7 @@ view.Quantization = class {
             return this.value.map((value, index) => `${index.toString().padStart(size, ' ')}: ${value}`).join('\n');
         } else if (this.type === 'annotation') {
             return Array.from(this.value).map(([name, value]) => `${name} = ${value}`).join('\n');
-        } else if (/^q\d_[01k]$/.test(this.type) || /^iq\d_[xsnlm]+$/.test(this.type) || this.type === 'mxfp4') {
+        } else if (/^q\d_[01k]$/.test(this.type) || /^iq\d_[xsnlm]+$/.test(this.type) || /^tq[12]_0$/.test(this.type) || this.type === 'mxfp4') {
             return '';
         }
         throw new view.Error(`Unknown quantization type '${this.type}'.`);
