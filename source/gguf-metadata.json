@@ -4123,7 +4123,8 @@
         { "name": "ffn_gate", "type": "MUL_MAT" },
         { "name": "ffn_down", "type": "MUL_MAT" },
         { "name": "ffn_up", "type": "MUL_MAT" },
-        { "name": "ffn_post_norm", "type": "RMS_NORM", "category": "Normalization", "tensors": ["post_ffw_norm"] }
+        { "name": "ffn_post_norm", "type": "RMS_NORM", "category": "Normalization", "tensors": ["post_ffw_norm"] },
+        { "name": "attn_qkv" }
       ],
       "output": [
         { "name": "output_norm", "type": "RMS_NORM", "category": "Normalization" },
