@@ -25758,6 +25758,20 @@
     ]
   },
   {
+    "name": "llvm.intr.smulh",
+    "operands": [
+      { "name": "a", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" },
+      { "name": "b", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ],
+    "traits": [
+      { "type": "SameOperandsAndResultType" }
+    ],
+    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
+  },
+  {
     "name": "llvm.intr.sqrt",
     "operands": [
       { "name": "in", "type": "LLVM_ScalarOrVectorOf<LLVM_AnyFloat>" }
@@ -25986,6 +26000,20 @@
     "results": [
       { "name": "res", "type": "LLVM_Type" }
     ]
+  },
+  {
+    "name": "llvm.intr.umulh",
+    "operands": [
+      { "name": "a", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" },
+      { "name": "b", "type": "LLVM_ScalarOrVectorOf<AnySignlessInteger>" }
+    ],
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ],
+    "traits": [
+      { "type": "SameOperandsAndResultType" }
+    ],
+    "assemblyFormat": "`(` operands `)` attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "llvm.intr.ushl.sat",
@@ -74979,7 +75007,7 @@
   {
     "name": "tf.MatrixSolve",
     "summary": "Solves systems of linear equations.",
-    "description": "`Matrix` is a tensor of shape `[..., M, M]` whose inner-most 2 dimensions\nform square matrices. `Rhs` is a tensor of shape `[..., M, K]`. The `output` is\na tensor shape `[..., M, K]`.  If `adjoint` is `False` then each output matrix\nsatisfies `matrix[..., :, :] * output[..., :, :] = rhs[..., :, :]`.\nIf `adjoint` is `True` then each output matrix satisfies\n`adjoint(matrix[..., :, :]) * output[..., :, :] = rhs[..., :, :]`.",
+    "description": "`Matrix` is a tensor of shape `[..., M, M]` whose inner-most 2 dimensions\nform square matrices. `Rhs` is a tensor of shape `[..., M, K]`. The `output` is\na tensor shape `[..., M, K]`.  If `adjoint` is `False` then each output matrix\nsatisfies `matrix[..., :, :] * output[..., :, :] = rhs[..., :, :]`.\nIf `adjoint` is `True` then each output matrix satisfies\n`adjoint(matrix[..., :, :]) * output[..., :, :] = rhs[..., :, :]`.\n\nIf a matrix is not invertible there is no guarantee what the op does. It\nmay detect the condition and raise an exception or it may simply return a\ngarbage result. In particular, under XLA compilation (e.g.\n`tf.function(jit_compile=True)`) the condition is not detected and the\nresult is implementation-defined.",
     "operands": [
       { "name": "matrix", "type": "TensorOf<[ TF_Complex128, TF_Complex64, TF_Float16, TF_Float32, TF_Float64 ]>" },
       { "name": "rhs", "type": "TensorOf<[ TF_Complex128, TF_Complex64, TF_Float16, TF_Float32, TF_Float64 ]>" }
@@ -105970,6 +105998,25 @@
     "assemblyFormat": "$input `,` $scales `,` $zero_points `,` $axis `,` $quant_min `,`\n        $quant_max `,` $dtype `,` $out_dtype attr-dict\n    `:` qualified(type($input)) `,` qualified(type($scales)) `,`\n        qualified(type($zero_points)) `,` qualified(type($axis)) `,`\n        qualified(type($quant_min)) `,` qualified(type($quant_max)) `,`\n        qualified(type($dtype)) `,` qualified(type($out_dtype))\n    `->` qualified(type($result))"
   },
   {
+    "name": "torch.quantized_decomposed.dequantize_per_channel_group",
+    "summary": "PT2E dequantize_per_channel_group",
+    "description": "Dequantizes an integer tensor with per-channel-group affine quantization.\n\n    The input tensor is dequantized in groups along the last dimension.\n    `scales` has shape `[num_channels, num_groups]` where\n    `num_groups = input.shape[-1] / group_size`. `zero_points` may be None\n    for symmetric quantization.",
+    "operands": [
+      { "name": "input", "type": "AnyTorchTensorType" },
+      { "name": "scales", "type": "AnyTorchTensorType" },
+      { "name": "zero_points", "type": "AnyTorchOptionalTensorType" },
+      { "name": "quant_min", "type": "Torch_IntType" },
+      { "name": "quant_max", "type": "Torch_IntType" },
+      { "name": "dtype", "type": "Torch_IntType" },
+      { "name": "group_size", "type": "Torch_IntType" },
+      { "name": "out_dtype", "type": "Torch_IntType" }
+    ],
+    "results": [
+      { "name": "result", "type": "AnyTorchTensorType" }
+    ],
+    "assemblyFormat": "$input `,` $scales `,` $zero_points `,` $quant_min `,`\n        $quant_max `,` $dtype `,` $group_size `,` $out_dtype attr-dict\n    `:` qualified(type($input)) `,` qualified(type($scales)) `,`\n        qualified(type($zero_points)) `,` qualified(type($quant_min)) `,`\n        qualified(type($quant_max)) `,` qualified(type($dtype)) `,`\n        qualified(type($group_size)) `,` qualified(type($out_dtype))\n    `->` qualified(type($result))"
+  },
+  {
     "name": "torch.quantized_decomposed.dequantize_per_tensor",
     "summary": "PT2E dequantize_per_tensor (scalar qparams)",
     "description": "Corresponds to `quantized_decomposed::dequantize_per_tensor` (the default /\n    scalar-qparams overload, whose schema overload_name is empty) in\n    PT2E-exported graphs.\n\n    Dequantizes an integer tensor back to floating point:\n    ```\n    output = (input - zero_point) * scale\n    ```\n\n    The `dtype` argument encodes the *input* element type as a `torch.dtype`\n    integer code and is used only for range-clamping metadata.  `out_dtype`,\n    when not None, specifies the output element type; otherwise output is\n    `float32`.  Output shape is identical to the input shape.",
@@ -106004,6 +106051,24 @@
       { "name": "result", "type": "AnyTorchTensorType" }
     ],
     "assemblyFormat": "$input `,` $scales `,` $zero_points `,` $axis `,` $quant_min `,`\n        $quant_max `,` $dtype attr-dict\n    `:` qualified(type($input)) `,` qualified(type($scales)) `,`\n        qualified(type($zero_points)) `,` qualified(type($axis)) `,`\n        qualified(type($quant_min)) `,` qualified(type($quant_max)) `,`\n        qualified(type($dtype))\n    `->` qualified(type($result))"
+  },
+  {
+    "name": "torch.quantized_decomposed.quantize_per_channel_group",
+    "summary": "PT2E quantize_per_channel_group",
+    "description": "Quantizes a floating-point tensor with per-channel-group affine\n    quantization.\n\n    The input tensor is quantized in groups along the last dimension.\n    `scales` and `zero_points` have shape `[num_channels, num_groups]`\n    where `num_groups = input.shape[-1] / group_size`.",
+    "operands": [
+      { "name": "input", "type": "AnyTorchTensorType" },
+      { "name": "scales", "type": "AnyTorchTensorType" },
+      { "name": "zero_points", "type": "AnyTorchTensorType" },
+      { "name": "quant_min", "type": "Torch_IntType" },
+      { "name": "quant_max", "type": "Torch_IntType" },
+      { "name": "dtype", "type": "Torch_IntType" },
+      { "name": "group_size", "type": "Torch_IntType" }
+    ],
+    "results": [
+      { "name": "result", "type": "AnyTorchTensorType" }
+    ],
+    "assemblyFormat": "$input `,` $scales `,` $zero_points `,` $quant_min `,`\n        $quant_max `,` $dtype `,` $group_size attr-dict\n    `:` qualified(type($input)) `,` qualified(type($scales)) `,`\n        qualified(type($zero_points)) `,` qualified(type($quant_min)) `,`\n        qualified(type($quant_max)) `,` qualified(type($dtype)) `,`\n        qualified(type($group_size))\n    `->` qualified(type($result))"
   },
   {
     "name": "torch.quantized_decomposed.quantize_per_tensor",
@@ -106560,7 +106625,8 @@
     ],
     "traits": [
       { "type": "FirstAttrDerivedResultType" }
-    ]
+    ],
+    "assemblyFormat": "operands `values` `(` $values `)` attr-dict `:` functional-type(operands, results)"
   },
   {
     "name": "tosa.const_shape",
@@ -126527,7 +126593,7 @@
   {
     "name": "ttnn.indexer_score_dsa",
     "summary": "DeepSeek Sparse Attention lightning-indexer scorer.",
-    "description": "Computes DSA (Deepseek Sparse Attention) lightning-indexer\n      scores. Corresponds to `ttnn.experimental.indexer_score_dsa`\n      (`ttnn::experimental::indexer_score_dsa`).\n\n      For every query position `s` and key position `t`:\n      ```\n      score[b, s, t] = sum_h relu(q[b, h, s, :] . k[b, t, :]) * weights[b, h, s]\n      ```\n      Causality is controlled by `chunk_start_idx`: key `t` is visible to query\n      `s` iff `t <= chunk_start_idx + s`. Masked (future) positions are set to\n      `-inf`.\n\n      Shapes use `B` (batch, must be 1), `Hi` (indexer heads), `Sq` (queries),\n      `T` (keys), and `D` (indexer head dim).\n\n      Args:\n          query (AnyRankedTensor): `[B x Hi x Sq x D]`.\n          key (AnyRankedTensor): `[B x 1 x T x D]`.\n          weights (AnyRankedTensor): `[B x Hi x Sq x 1]` per-head gate scales.\n          chunk_start_idx (uint): Causal offset of the first query within the\n              full key sequence. Defaults to `0`.\n          cluster_axis (optional uint): Mesh axis carrying the query sequence\n              shard. On a mesh, the op offsets each device's causal window by\n              `rank * Sq`, where `rank` is that device's index along this axis.\n              Unset leaves the op on a flat row-major enumeration over all of\n              the query's devices, which is only correct when the query\n              sequence is sharded across every device.\n\n      Returns:\n          AnyRankedTensor: `[B x 1 x Sq x T]` scores.\n\n      Note: this op is only supported on Blackhole.",
+    "description": "Computes DSA (Deepseek Sparse Attention) lightning-indexer\n      scores. Corresponds to `ttnn.experimental.indexer_score_dsa`\n      (`ttnn::experimental::indexer_score_dsa`).\n\n      For every query position `s` and key position `t`:\n      ```\n      score[b, s, t] = sum_h relu(q[b, h, s, :] . k[b, t, :]) * weights[b, 0, s, h]\n      ```\n      Causality is controlled by `chunk_start_idx`: key `t` is visible to query\n      `s` iff `t <= chunk_start_idx + s`. Masked (future) positions are set to\n      `-inf`.\n\n      Shapes use `B` (batch, must be 1), `Hi` (indexer heads), `Sq` (queries),\n      `T` (keys), and `D` (indexer head dim).\n\n      Args:\n          query (AnyRankedTensor): `[B x Hi x Sq x D]`.\n          key (AnyRankedTensor): `[B x 1 x T x D]`.\n          weights (AnyRankedTensor): `[B x 1 x Sq x Hi]` per-head gate scales,\n              in the head-minor order the weights projection produces natively.\n          chunk_start_idx (uint): Causal offset of the first query within the\n              full key sequence. Defaults to `0`.\n          cluster_axis (optional uint): Mesh axis carrying the query sequence\n              shard. On a mesh, the op offsets each device's causal window by\n              `rank * Sq`, where `rank` is that device's index along this axis.\n              Unset leaves the op on a flat row-major enumeration over all of\n              the query's devices, which is only correct when the query\n              sequence is sharded across every device.\n\n      Returns:\n          AnyRankedTensor: `[B x 1 x Sq x T]` scores.\n\n      Note: this op is only supported on Blackhole.",
     "operands": [
       { "name": "query", "type": "AnyRankedTensor" },
       { "name": "key", "type": "AnyRankedTensor" },
