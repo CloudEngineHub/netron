@@ -33535,7 +33535,7 @@
   {
     "name": "nvvm.convert.bf16x2.to.f4x2",
     "summary": "Convert an bf16x2 input to f4x2",
-    "description": "This Op converts each of the givenBF16inputs in anbf16x2 vector to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from the first element of `a` is \n    stored in the lower 4 bits of `dst` and the value converted from the second \n    element of `a` is stored in the upper 4 bits of `dst`.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.",
+    "description": "This Op converts each of the givenBF16inputs in anbf16x2 vector to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from the first element of `a` is \n    stored in the lower 4 bits of `dst` and the value converted from the second \n    element of `a` is stored in the upper 4 bits of `dst`.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.",
     "operands": [
       { "name": "src", "type": "VectorOfLengthAndType<[2]>" }
     ],
@@ -33544,14 +33544,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttrOf<F4E2M1FN>" }
+      { "name": "dstTy", "type": "TypeAttrOf<F4E2M1FN>" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$src oilist(`relu` `=` $relu) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$src oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.bf16x2.to.f6x2",
     "summary": "Convert an bf16x2 input to f6x2",
-    "description": "This Op converts each of the givenBF16inputs in anbf16x2 vector to the specified fp6 type. The result `dst` is \n    represented either as an i16 type or as a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` with 2 MSB bits padded with zeros and the value \n    converted from the second element of `a` is stored in the upper 8 bits of \n    `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector with 2 MSB bits padded with zeros.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.",
+    "description": "This Op converts each of the givenBF16inputs in anbf16x2 vector to the specified fp6 type. The result `dst` is \n    represented either as an i16 type or as a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` with 2 MSB bits padded with zeros and the value \n    converted from the second element of `a` is stored in the upper 8 bits of \n    `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector with 2 MSB bits padded with zeros.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.",
     "operands": [
       { "name": "src", "type": "VectorOfLengthAndType<[2]>" }
     ],
@@ -33560,14 +33562,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F6E2M3FN, F6E3M2FN ]>>" }
+      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F6E2M3FN, F6E3M2FN ]>>" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$src oilist(`relu` `=` $relu) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$src oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.bf16x2.to.f8x2",
     "summary": "Convert a pair of bf16 inputs to f8x2",
-    "description": "This Op converts the given bf16 inputs in a bf16x2 vector to the specified \n    f8 type. The result `dst` is represented either as a packed i16 type or as \n    a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` and the value converted from the second element of \n    `a` is stored in the upper 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` and `sat` attributes specify the rounding and saturation modes \n    respectively.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
+    "description": "This Op converts the given bf16 inputs in a bf16x2 vector to the specified \n    f8 type. The result `dst` is represented either as a packed i16 type or as \n    a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` and the value converted from the second element of \n    `a` is stored in the upper 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` and `sat` attributes specify the rounding and saturation modes \n    respectively. Conversions to `f8E4M3FN` and `f8E5M2` support `rn` and `rz`\n    rounding. The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the '.pzo'\n    variant of the cvt instruction. `pzo` is not supported for conversions to\n    `f8E8M0FNU`.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
     "operands": [
       { "name": "src", "type": "VectorOfLengthAndType<[2], [BF16]>" }
     ],
@@ -33578,9 +33582,10 @@
       { "name": "rnd", "type": "DefaultValuedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, FPRoundingMode::NONE>" },
       { "name": "sat", "type": "DefaultValuedAttr<SaturationModeAttr{none|satfinite|sat}, SaturationMode::NONE>" },
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F8E8M0FNU, F8E4M3FN, F8E5M2 ]>>" }
+      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F8E8M0FNU, F8E4M3FN, F8E5M2 ]>>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$src oilist(\n      `rnd` `=` $rnd | `sat` `=` $sat | `relu` `=` $relu\n    ) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$src oilist(\n      `rnd` `=` $rnd | `sat` `=` $sat | `relu` `=` $relu | `pzo` `=` $pzo\n    ) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.bf16x2.to.s2f6x2",
@@ -33601,7 +33606,7 @@
   {
     "name": "nvvm.convert.f16x2.to.f4x2",
     "summary": "Convert an f16x2 input to f4x2",
-    "description": "This Op converts each of the givenF16inputs in anf16x2 vector to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from the first element of `a` is \n    stored in the lower 4 bits of `dst` and the value converted from the second \n    element of `a` is stored in the upper 4 bits of `dst`.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.",
+    "description": "This Op converts each of the givenF16inputs in anf16x2 vector to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from the first element of `a` is \n    stored in the lower 4 bits of `dst` and the value converted from the second \n    element of `a` is stored in the upper 4 bits of `dst`.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.",
     "operands": [
       { "name": "src", "type": "VectorOfLengthAndType<[2]>" }
     ],
@@ -33610,14 +33615,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttrOf<F4E2M1FN>" }
+      { "name": "dstTy", "type": "TypeAttrOf<F4E2M1FN>" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$src oilist(`relu` `=` $relu) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$src oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f16x2.to.f6x2",
     "summary": "Convert an f16x2 input to f6x2",
-    "description": "This Op converts each of the givenF16inputs in anf16x2 vector to the specified fp6 type. The result `dst` is \n    represented either as an i16 type or as a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` with 2 MSB bits padded with zeros and the value \n    converted from the second element of `a` is stored in the upper 8 bits of \n    `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector with 2 MSB bits padded with zeros.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.",
+    "description": "This Op converts each of the givenF16inputs in anf16x2 vector to the specified fp6 type. The result `dst` is \n    represented either as an i16 type or as a vector of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from the first element of `a` is stored in the \n    lower 8 bits of `dst` with 2 MSB bits padded with zeros and the value \n    converted from the second element of `a` is stored in the upper 8 bits of \n    `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector with 2 MSB bits padded with zeros.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.",
     "operands": [
       { "name": "src", "type": "VectorOfLengthAndType<[2]>" }
     ],
@@ -33626,14 +33633,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F6E2M3FN, F6E3M2FN ]>>" }
+      { "name": "dstTy", "type": "TypeAttrOf<AnyTypeOf<[ F6E2M3FN, F6E3M2FN ]>>" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$src oilist(`relu` `=` $relu) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$src oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo) attr-dict\n    `:` type($src) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f16x2.to.f8x2",
     "summary": "Convert an f16x2 input to f8x2",
-    "description": "This Op converts the given f16 inputs in an f16x2 vector to the specified \n    f8 type.\n    The result `dst` is represented as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values from `a`\n    are packed such that the value converted from the first element of `a`\n    is stored in the upper 8 bits of `dst` and the value converted from the\n    second element of `a` is stored in the lower 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
+    "description": "This Op converts the given f16 inputs in an f16x2 vector to the specified \n    f8 type.\n    The result `dst` is represented as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values from `a`\n    are packed such that the value converted from the first element of `a`\n    is stored in the upper 8 bits of `dst` and the value converted from the\n    second element of `a` is stored in the lower 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
     "operands": [
       { "name": "a", "type": "VectorOfLengthAndType<[2], [F16]>" }
     ],
@@ -33642,9 +33651,11 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttr" }
+      { "name": "dstTy", "type": "TypeAttr" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$a oilist(`relu` `=` $relu) attr-dict\n    `:` type($a) `->` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$a oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo) attr-dict\n    `:` type($a) `->` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f32x2.to.bf16x2",
@@ -33687,7 +33698,7 @@
   {
     "name": "nvvm.convert.f32x2.to.f4x2",
     "summary": "Convert a pair of float inputs to f4x2",
-    "description": "This Op converts each of the given float inputs to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from `a` is stored in the upper 4 bits \n    of `dst` and the value converted from `b` is stored in the lower 4 bits of \n    `dst`.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
+    "description": "This Op converts each of the given float inputs to the specified fp4 type.\n    The result `dst` is returned as an i8 type where the converted values are \n    packed such that the value converted from `a` is stored in the upper 4 bits \n    of `dst` and the value converted from `b` is stored in the lower 4 bits of \n    `dst`.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
     "operands": [
       { "name": "a", "type": "F32" },
       { "name": "b", "type": "F32" }
@@ -33697,14 +33708,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttr" }
+      { "name": "dstTy", "type": "TypeAttr" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$a `,` $b oilist(`relu` `=` $relu) attr-dict\n    `:` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$a `,` $b oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo)\n    attr-dict `:` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f32x2.to.f6x2",
     "summary": "Convert a pair of float inputs to f6x2",
-    "description": "This Op converts each of the given float inputs to the specified fp6 type.\n    The result `dst` is represented either as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from `a` is stored in the upper 8 bits of `dst` \n    with 2 MSB bits padded with zeros and the value converted from `b` is \n    stored in the lower 8 bits of `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
+    "description": "This Op converts each of the given float inputs to the specified fp6 type.\n    The result `dst` is represented either as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from `a` is stored in the upper 8 bits of `dst` \n    with 2 MSB bits padded with zeros and the value converted from `b` is \n    stored in the lower 8 bits of `dst` with 2 MSB bits padded with zeros.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` attribute specifies the rounding mode (`rn` or `rz`).\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
     "operands": [
       { "name": "a", "type": "F32" },
       { "name": "b", "type": "F32" }
@@ -33714,14 +33727,16 @@
     ],
     "attributes": [
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttr" }
+      { "name": "dstTy", "type": "TypeAttr" },
+      { "name": "rnd", "type": "DefaultValuedAttr<ConfinedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, [ EnumAttrIsOneOf < FPRoundingModeAttr , [ FPRoundingModeRN , FPRoundingModeRZ ] > ]>, FPRoundingMode::RN>" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$a `,` $b oilist(`relu` `=` $relu) attr-dict\n    `:` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$a `,` $b oilist(`rnd` `=` $rnd | `relu` `=` $relu | `pzo` `=` $pzo)\n    attr-dict `:` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f32x2.to.f8x2",
     "summary": "Convert a pair of float inputs to f8x2",
-    "description": "This Op converts each of the given float inputs to the specified fp8 type.\n    The result `dst` is represented as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from `a` is stored in the upper 8 bits of `dst` \n    and the value converted from `b` is stored in the lower 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` and `sat` attributes specify the rounding and saturation modes respectively.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
+    "description": "This Op converts each of the given float inputs to the specified fp8 type.\n    The result `dst` is represented as an i16 type or as a vector\n    of two i8 types.\n    If `dst` is returned as an i16 type, the converted values are packed such \n    that the value converted from `a` is stored in the upper 8 bits of `dst` \n    and the value converted from `b` is stored in the lower 8 bits of `dst`.\n    If `dst` is returned as a vector type, each converted value is stored as an \n    i8 element in the vector.\n    The `rnd` and `sat` attributes specify the rounding and saturation modes respectively.\n    Conversions to `f8E4M3FN` and `f8E5M2` support `rn` and `rz` rounding.\n    The `relu` attribute, when set, lowers to the '.relu' variant of\n    the cvt instruction. The `pzo` attribute, when set, lowers to the\n    '.pzo' variant of the cvt instruction. `pzo` is not supported for\n    conversions to `f8E8M0FNU`.\n\n    [For more information, see PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-cvt)",
     "operands": [
       { "name": "a", "type": "F32" },
       { "name": "b", "type": "F32" }
@@ -33733,9 +33748,10 @@
       { "name": "rnd", "type": "DefaultValuedAttr<FPRoundingModeAttr{none|rn|rm|rp|rz|rna|rs}, FPRoundingMode::NONE>" },
       { "name": "sat", "type": "DefaultValuedAttr<SaturationModeAttr{none|satfinite|sat}, SaturationMode::NONE>" },
       { "name": "relu", "type": "DefaultValuedAttr<BoolAttr, false>" },
-      { "name": "dstTy", "type": "TypeAttr" }
+      { "name": "dstTy", "type": "TypeAttr" },
+      { "name": "pzo", "type": "DefaultValuedAttr<BoolAttr, false>" }
     ],
-    "assemblyFormat": "$a `,` $b oilist(\n      `rnd` `=` $rnd | `sat` `=` $sat | `relu` `=` $relu\n    ) attr-dict `:` type($dst) `(` $dstTy `)`"
+    "assemblyFormat": "$a `,` $b oilist(\n      `rnd` `=` $rnd | `sat` `=` $sat | `relu` `=` $relu | `pzo` `=` $pzo\n    ) attr-dict `:` type($dst) `(` $dstTy `)`"
   },
   {
     "name": "nvvm.convert.f32x2.to.s2f6x2",
@@ -112594,6 +112610,19 @@
     "assemblyFormat": "attr-dict"
   },
   {
+    "name": "transform.apply_patterns.math.f32_expansion",
+    "description": "Converts math functions to f32: operands are extended and the result is\n    truncated back.",
+    "assemblyFormat": "attr-dict"
+  },
+  {
+    "name": "transform.apply_patterns.math.polynomial_approximation",
+    "description": "Enables polynomial approximations for math functions.\n    Optionally, allows usage of x86 AVX2 intrinsics.",
+    "attributes": [
+      { "name": "enable_avx2", "type": "UnitAttr" }
+    ],
+    "assemblyFormat": "(`enable_avx2` $enable_avx2^)? attr-dict"
+  },
+  {
     "name": "transform.apply_patterns.memref.alloc_to_alloca",
     "description": "Collects patterns to rewrite scoped dynamic allocation (`alloc`/`dealloc`\n    pairs) into automatic allocation (`alloca`) in the same scope, for memrefs\n    of static shape.\n\n    The `size_limit` attribute controls the maximum allocated memory (in bytes,\n    subject to data layout) for which the pattern applies.",
     "attributes": [
@@ -140714,6 +140743,25 @@
       { "name": "result", "type": "AnyMemRef" }
     ],
     "assemblyFormat": "$source `:` type($source) `->` type($result) attr-dict"
+  },
+  {
+    "name": "xtile.reduce_scatter",
+    "summary": "variadic reduce-scatter operation",
+    "description": "Mirrors HLO's kReduceScatter operation with one or more operands.\n\n    Output `k` on every replica is the element-wise reduction, over all\n    replicas of its replica group, of that replica's shard of input `k` along\n    `scatter_dimension`. The same binary reduction `computation` (a region\n    with two 0-d tensor arguments, terminated by `stablehlo.return`) is applied\n    to all operands.\n\n    This op exists because `stablehlo.reduce_scatter` takes exactly one operand\n    and produces one result, whereas HLO's reduce-scatter (like\n    `stablehlo.all_gather` and `stablehlo.all_reduce`) is variadic. Extending\n    StableHLO is out of scope for XTile, so reduce-scatters are emitted as this\n    op.\n\n    Example: for inputs of type `tensor<2x64xf32>`, `scatter_dimension = 0` and\n    a replica group of size 2, the outputs have type `tensor<1x64xf32>`.",
+    "operands": [
+      { "name": "inputs", "type": "Variadic<AnyRankedTensor>" }
+    ],
+    "results": [
+      { "name": "outputs", "type": "Variadic<AnyRankedTensor>" }
+    ],
+    "attributes": [
+      { "name": "scatter_dimension", "type": "I64Attr" },
+      { "name": "replica_groups", "type": "I64ElementsAttr" }
+    ],
+    "regions": [
+      { "name": "computation", "type": "SizedRegion<1>" }
+    ],
+    "assemblyFormat": "`(` $inputs `)` `scatter_dimension` `=` $scatter_dimension\n    prop-dict attr-dict\n    `:` `(` type($inputs) `)` `->` `(` type($outputs) `)`\n    $computation"
   },
   {
     "name": "xtile.return",
