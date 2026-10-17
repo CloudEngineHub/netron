@@ -6,8 +6,8 @@
         "email": "lutzroeder@users.noreply.github.com",
         "url": "https://www.lutzroeder.com"
     },
-    "version": "9.3.1",
-    "date": "2026-10-02 13:14:41",
+    "version": "9.3.2",
+    "date": "2026-10-16 16:31:41",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "lutzroeder/netron",
@@ -35,9 +35,9 @@
     "devDependencies": {
         "@electron/notarize": "3.1.2",
         "@playwright/test": "1.64.1",
-        "electron": "44.7.2",
+        "electron": "44.8.0",
         "electron-builder": "26.16.1",
-        "eslint": "10.12.0"
+        "eslint": "10.13.0"
     },
     "build": {
         "extends": "publish/electron-builder.json"
