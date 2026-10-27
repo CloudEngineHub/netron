@@ -53908,6 +53908,134 @@
     "category": "Activation"
   },
   {
+    "name": "RMSNormRotary",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "CUDA BF16 ONNX-arithmetic RMS normalization followed by non-interleaved partial RoPE. Input is [B,S,heads,stride]; a contiguous last-axis slice is normalized with FP32 scale. Normalization rounds to BF16 before rotation. Output is flattened [B,S,heads*width]. Width 256 and more than one row use one kernel for FP32 decode rotary or prefill; other shapes and BF16 decode rotary reuse existing CUDA kernels. Prefill mode uses reciprocal-multiply normalization and BF16 rotary intermediates; decode uses division normalization and the selected rotary arithmetic.",
+    "attributes": [
+      {
+        "name": "epsilon",
+        "type": "float32",
+        "required": false,
+        "default": 9.999999974752427e-07,
+        "description": "Finite nonnegative RMS epsilon."
+      },
+      {
+        "name": "flatten_batch",
+        "type": "int64",
+        "required": false,
+        "description": "One flattens B*S to sequence and outputs [1,B*S,heads*width]."
+      },
+      {
+        "name": "input_start",
+        "type": "int64",
+        "required": false,
+        "description": "Nonnegative start of normalized last-axis slice."
+      },
+      {
+        "name": "input_width",
+        "type": "int64",
+        "required": false,
+        "description": "Normalized width; zero uses the full last dimension."
+      },
+      {
+        "name": "rotary_embedding_dim",
+        "type": "int64",
+        "required": true,
+        "description": "Positive even rotary width, no larger than normalized width."
+      },
+      {
+        "name": "use_fp32_arithmetic",
+        "type": "int64",
+        "required": false,
+        "default": 1,
+        "description": "Decode rotary FP32 (1) or BF16 intermediates (0)."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "type": "T",
+        "description": "BF16 input [B,S,heads,stride]."
+      },
+      {
+        "name": "scale",
+        "type": "F",
+        "description": "FP32 RMS scale [width]."
+      },
+      {
+        "name": "position_ids",
+        "type": "I",
+        "description": "One base position or [B,S] positions."
+      },
+      {
+        "name": "cosine",
+        "type": "T",
+        "description": "BF16 cache [cache_rows,rotary_embedding_dim/2]."
+      },
+      {
+        "name": "sine",
+        "type": "T",
+        "description": "Same shape/type as cosine."
+      },
+      {
+        "name": "prefill_numerics",
+        "type": "TI",
+        "option": "optional",
+        "description": "Optional CPU int32 scalar 0/1."
+      }
+    ],
+    "min_input": 5,
+    "max_input": 6,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T",
+        "description": "Normalized and rotated [B,S,heads*width]."
+      },
+      {
+        "name": "normalized_fp32",
+        "type": "F",
+        "option": "optional",
+        "description": "Optional BF16-rounded normalized values widened to FP32, before rotation, [B,S,heads,width]."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 2,
+    "inputs_range": "5 - 6",
+    "outputs_range": "1 - 2",
+    "type_constraints": [
+      {
+        "description": "BF16 data.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(bfloat16)"
+        ]
+      },
+      {
+        "description": "FP32 scale and optional normalized output.",
+        "type_param_str": "F",
+        "allowed_type_strs": [
+          "tensor(float)"
+        ]
+      },
+      {
+        "description": "Position indices.",
+        "type_param_str": "I",
+        "allowed_type_strs": [
+          "tensor(int64)"
+        ]
+      },
+      {
+        "description": "Numerical control.",
+        "type_param_str": "TI",
+        "allowed_type_strs": [
+          "tensor(int32)"
+        ]
+      }
+    ]
+  },
+  {
     "name": "RMSNormalization",
     "module": "ai.onnx",
     "version": 23,
@@ -66585,7 +66713,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -66646,7 +66774,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -66721,7 +66849,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -66800,7 +66928,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -66881,7 +67009,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -66963,7 +67091,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -67046,7 +67174,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
@@ -67131,7 +67259,7 @@
     "examples": [
       {
         "summary": "shape",
-        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
+        "code": "x = np.array(\n    [\n        [1, 2, 3],\n        [4, 5, 6],\n    ]\n).astype(np.float32)\ntest_shape(\"_example\", x)  # preserve names of original test cases\n\nx = np.random.randn(3, 4, 5).astype(np.float32)\n\ntest_shape(\"\", x)  # preserve names of original test cases\n\ntest_shape(\"_start_1\", x, start=1)\n\ntest_shape(\"_end_1\", x, end=1)\n\ntest_shape(\"_start_negative_1\", x, start=-1)\n\ntest_shape(\"_end_negative_1\", x, end=-1)\n\ntest_shape(\"_start_1_end_negative_1\", x, start=1, end=-1)\n\ntest_shape(\"_start_1_end_2\", x, start=1, end=2)\n\ntest_shape(\"_clip_start\", x, start=-10)\n\ntest_shape(\"_clip_end\", x, end=10)\n\ntest_shape(\"_clip_end_negative\", x, end=-4)\n\ntest_shape(\"_start_greater_than_end\", x, start=2, end=1)"
       }
     ]
   },
