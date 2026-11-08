@@ -32310,6 +32310,10 @@
     ],
     "examples": [
       {
+        "summary": "float16_large_values",
+        "code": "node = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n# input size: (1, 1, 256)\nx = np.arange(0, 512, 2).reshape(1, 1, 256).astype(np.float16)\ns = np.array([1.0]).astype(np.float16)\nbias = np.array([0.0]).astype(np.float16)\n# The variance (about 21845) is representable in float16, but squaring\n# values up to 510 overflows it, so compute in float32.\nx32 = x.astype(np.float32)\nmean = np.mean(x32, axis=2, keepdims=True)\nvar = np.var(x32, axis=2, keepdims=True)\ny = ((x32 - mean) / np.sqrt(var + 1e-5)).astype(np.float16)\n\nexpect(\n    node,\n    inputs=[x, s, bias],\n    outputs=[y],\n    name=\"test_instancenorm_float16_large_values\",\n)"
+      },
+      {
         "summary": "instancenormalization",
         "code": "def _instancenorm_test_mode(\n    x: np.ndarray, s: np.ndarray, bias: np.ndarray, epsilon: float = 1e-5\n) -> np.ndarray:\n    dims_x = len(x.shape)\n    axis = tuple(range(2, dims_x))\n    mean = np.mean(x, axis=axis, keepdims=True)\n    var = np.var(x, axis=axis, keepdims=True)\n    dim_ones = (1,) * (dims_x - 2)\n    s = s.reshape(-1, *dim_ones)\n    bias = bias.reshape(-1, *dim_ones)\n    return s * (x - mean) / np.sqrt(var + epsilon) + bias\n\n# input size: (1, 2, 1, 3)\nx = np.array([[[[-1, 0, 1]], [[2, 3, 4]]]]).astype(np.float32)\ns = np.array([1.0, 1.5]).astype(np.float32)\nbias = np.array([0, 1]).astype(np.float32)\ny = _instancenorm_test_mode(x, s, bias).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n\n# output size: (1, 2, 1, 3)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_example\")\n\n# input size: (2, 3, 4, 5)\nx = np.random.randn(2, 3, 4, 5).astype(np.float32)\ns = np.random.randn(3).astype(np.float32)\nbias = np.random.randn(3).astype(np.float32)\nepsilon = 1e-2\ny = _instancenorm_test_mode(x, s, bias, epsilon).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n    epsilon=epsilon,\n)\n\n# output size: (2, 3, 4, 5)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_epsilon\")"
       }
@@ -32370,6 +32374,10 @@
       }
     ],
     "examples": [
+      {
+        "summary": "float16_large_values",
+        "code": "node = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n# input size: (1, 1, 256)\nx = np.arange(0, 512, 2).reshape(1, 1, 256).astype(np.float16)\ns = np.array([1.0]).astype(np.float16)\nbias = np.array([0.0]).astype(np.float16)\n# The variance (about 21845) is representable in float16, but squaring\n# values up to 510 overflows it, so compute in float32.\nx32 = x.astype(np.float32)\nmean = np.mean(x32, axis=2, keepdims=True)\nvar = np.var(x32, axis=2, keepdims=True)\ny = ((x32 - mean) / np.sqrt(var + 1e-5)).astype(np.float16)\n\nexpect(\n    node,\n    inputs=[x, s, bias],\n    outputs=[y],\n    name=\"test_instancenorm_float16_large_values\",\n)"
+      },
       {
         "summary": "instancenormalization",
         "code": "def _instancenorm_test_mode(\n    x: np.ndarray, s: np.ndarray, bias: np.ndarray, epsilon: float = 1e-5\n) -> np.ndarray:\n    dims_x = len(x.shape)\n    axis = tuple(range(2, dims_x))\n    mean = np.mean(x, axis=axis, keepdims=True)\n    var = np.var(x, axis=axis, keepdims=True)\n    dim_ones = (1,) * (dims_x - 2)\n    s = s.reshape(-1, *dim_ones)\n    bias = bias.reshape(-1, *dim_ones)\n    return s * (x - mean) / np.sqrt(var + epsilon) + bias\n\n# input size: (1, 2, 1, 3)\nx = np.array([[[[-1, 0, 1]], [[2, 3, 4]]]]).astype(np.float32)\ns = np.array([1.0, 1.5]).astype(np.float32)\nbias = np.array([0, 1]).astype(np.float32)\ny = _instancenorm_test_mode(x, s, bias).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n\n# output size: (1, 2, 1, 3)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_example\")\n\n# input size: (2, 3, 4, 5)\nx = np.random.randn(2, 3, 4, 5).astype(np.float32)\ns = np.random.randn(3).astype(np.float32)\nbias = np.random.randn(3).astype(np.float32)\nepsilon = 1e-2\ny = _instancenorm_test_mode(x, s, bias, epsilon).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n    epsilon=epsilon,\n)\n\n# output size: (2, 3, 4, 5)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_epsilon\")"
@@ -32432,6 +32440,10 @@
       }
     ],
     "examples": [
+      {
+        "summary": "float16_large_values",
+        "code": "node = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n# input size: (1, 1, 256)\nx = np.arange(0, 512, 2).reshape(1, 1, 256).astype(np.float16)\ns = np.array([1.0]).astype(np.float16)\nbias = np.array([0.0]).astype(np.float16)\n# The variance (about 21845) is representable in float16, but squaring\n# values up to 510 overflows it, so compute in float32.\nx32 = x.astype(np.float32)\nmean = np.mean(x32, axis=2, keepdims=True)\nvar = np.var(x32, axis=2, keepdims=True)\ny = ((x32 - mean) / np.sqrt(var + 1e-5)).astype(np.float16)\n\nexpect(\n    node,\n    inputs=[x, s, bias],\n    outputs=[y],\n    name=\"test_instancenorm_float16_large_values\",\n)"
+      },
       {
         "summary": "instancenormalization",
         "code": "def _instancenorm_test_mode(\n    x: np.ndarray, s: np.ndarray, bias: np.ndarray, epsilon: float = 1e-5\n) -> np.ndarray:\n    dims_x = len(x.shape)\n    axis = tuple(range(2, dims_x))\n    mean = np.mean(x, axis=axis, keepdims=True)\n    var = np.var(x, axis=axis, keepdims=True)\n    dim_ones = (1,) * (dims_x - 2)\n    s = s.reshape(-1, *dim_ones)\n    bias = bias.reshape(-1, *dim_ones)\n    return s * (x - mean) / np.sqrt(var + epsilon) + bias\n\n# input size: (1, 2, 1, 3)\nx = np.array([[[[-1, 0, 1]], [[2, 3, 4]]]]).astype(np.float32)\ns = np.array([1.0, 1.5]).astype(np.float32)\nbias = np.array([0, 1]).astype(np.float32)\ny = _instancenorm_test_mode(x, s, bias).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n)\n\n# output size: (1, 2, 1, 3)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_example\")\n\n# input size: (2, 3, 4, 5)\nx = np.random.randn(2, 3, 4, 5).astype(np.float32)\ns = np.random.randn(3).astype(np.float32)\nbias = np.random.randn(3).astype(np.float32)\nepsilon = 1e-2\ny = _instancenorm_test_mode(x, s, bias, epsilon).astype(np.float32)\n\nnode = onnx.helper.make_node(\n    \"InstanceNormalization\",\n    inputs=[\"x\", \"s\", \"bias\"],\n    outputs=[\"y\"],\n    epsilon=epsilon,\n)\n\n# output size: (2, 3, 4, 5)\nexpect(node, inputs=[x, s, bias], outputs=[y], name=\"test_instancenorm_epsilon\")"
@@ -33040,6 +33052,10 @@
         "code": "alpha = 0.0001\nbeta = 0.75\nbias = 1.0\nnsize = 3\nnode = onnx.helper.make_node(\"LRN\", inputs=[\"x\"], outputs=[\"y\"], size=3)\nx = np.random.randn(1, 5, 5, 5).astype(np.float32)\nsquare_sum = np.zeros_like(x)\nfor n, c, h, w in np.ndindex(x.shape):\n    square_sum[n, c, h, w] = sum(\n        x[\n            n,\n            max(0, c - math.floor((nsize - 1) / 2)) : min(\n                x.shape[1], c + math.ceil((nsize - 1) / 2) + 1\n            ),\n            h,\n            w,\n        ]\n        ** 2\n    )\ny = x / ((bias + (alpha / nsize) * square_sum) ** beta)\nexpect(node, inputs=[x], outputs=[y], name=\"test_lrn_default\")"
       },
       {
+        "summary": "float16_large_values",
+        "code": "alpha = 0.0001\nbeta = 0.75\nbias = 1.0\nnsize = 5\nnode = onnx.helper.make_node(\"LRN\", inputs=[\"x\"], outputs=[\"y\"], size=nsize)\nx = np.full((1, 5, 1, 1), 300).astype(np.float16)\n# 300 ** 2 overflows float16 (max 65504), so compute in float32.\nx32 = x.astype(np.float32)\nsquare_sum = np.zeros_like(x32)\nfor c in range(x.shape[1]):\n    begin = max(0, c - math.floor((nsize - 1) / 2))\n    end = min(x.shape[1], c + math.ceil((nsize - 1) / 2) + 1)\n    square_sum[:, c] = np.sum(x32[:, begin:end] ** 2, axis=1)\ny = (x32 / ((bias + (alpha / nsize) * square_sum) ** beta)).astype(np.float16)\nexpect(node, inputs=[x], outputs=[y], name=\"test_lrn_float16_large_values\")"
+      },
+      {
         "summary": "lrn",
         "code": "alpha = 0.0002\nbeta = 0.5\nbias = 2.0\nnsize = 3\nnode = onnx.helper.make_node(\n    \"LRN\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n    alpha=alpha,\n    beta=beta,\n    bias=bias,\n    size=nsize,\n)\nx = np.random.randn(1, 5, 5, 5).astype(np.float32)\nsquare_sum = np.zeros_like(x)\nfor n, c, h, w in np.ndindex(x.shape):\n    square_sum[n, c, h, w] = sum(\n        x[\n            n,\n            max(0, c - math.floor((nsize - 1) / 2)) : min(\n                x.shape[1], c + math.ceil((nsize - 1) / 2) + 1\n            ),\n            h,\n            w,\n        ]\n        ** 2\n    )\ny = x / ((bias + (alpha / nsize) * square_sum) ** beta)\nexpect(node, inputs=[x], outputs=[y], name=\"test_lrn\")"
       }
@@ -33113,6 +33129,10 @@
       {
         "summary": "default",
         "code": "alpha = 0.0001\nbeta = 0.75\nbias = 1.0\nnsize = 3\nnode = onnx.helper.make_node(\"LRN\", inputs=[\"x\"], outputs=[\"y\"], size=3)\nx = np.random.randn(1, 5, 5, 5).astype(np.float32)\nsquare_sum = np.zeros_like(x)\nfor n, c, h, w in np.ndindex(x.shape):\n    square_sum[n, c, h, w] = sum(\n        x[\n            n,\n            max(0, c - math.floor((nsize - 1) / 2)) : min(\n                x.shape[1], c + math.ceil((nsize - 1) / 2) + 1\n            ),\n            h,\n            w,\n        ]\n        ** 2\n    )\ny = x / ((bias + (alpha / nsize) * square_sum) ** beta)\nexpect(node, inputs=[x], outputs=[y], name=\"test_lrn_default\")"
+      },
+      {
+        "summary": "float16_large_values",
+        "code": "alpha = 0.0001\nbeta = 0.75\nbias = 1.0\nnsize = 5\nnode = onnx.helper.make_node(\"LRN\", inputs=[\"x\"], outputs=[\"y\"], size=nsize)\nx = np.full((1, 5, 1, 1), 300).astype(np.float16)\n# 300 ** 2 overflows float16 (max 65504), so compute in float32.\nx32 = x.astype(np.float32)\nsquare_sum = np.zeros_like(x32)\nfor c in range(x.shape[1]):\n    begin = max(0, c - math.floor((nsize - 1) / 2))\n    end = min(x.shape[1], c + math.ceil((nsize - 1) / 2) + 1)\n    square_sum[:, c] = np.sum(x32[:, begin:end] ** 2, axis=1)\ny = (x32 / ((bias + (alpha / nsize) * square_sum) ** beta)).astype(np.float16)\nexpect(node, inputs=[x], outputs=[y], name=\"test_lrn_float16_large_values\")"
       },
       {
         "summary": "lrn",
