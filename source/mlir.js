@@ -9032,6 +9032,7 @@ _.Dialect = class {
         this.registerCustomAttribute('DefaultValuedOptionalAttr', this.parseDefaultValuedOptionalAttr.bind(this));
         this.registerCustomAttribute('DefaultValuedAttr', this.parseDefaultValuedAttr.bind(this));
         this.registerCustomAttribute('DefaultValuedEnumAttr', this.parseDefaultValuedAttr.bind(this));
+        this.registerCustomAttribute('DefaultValuedEnumProp', this.parseDefaultValuedAttr.bind(this));
         this.registerCustomAttribute('DefaultValuedProp', this.parseDefaultValuedAttr.bind(this));
         this.registerCustomAttribute('EnumProp', this.parseEnumProp.bind(this));
         this.registerCustomAttribute('ConfinedAttr', this.parseConfinedAttr.bind(this));
@@ -25927,6 +25928,7 @@ _.test.TestDialect = class extends _.Dialect {
         this.registerCustomAttribute('TestEnumAttr', this.parseTestEnumAttr.bind(this));
         this.registerCustomAttribute('TestEnumProp', this.parseTestEnumAttr.bind(this));
         this.registerCustomAttribute('TestEnumPropAttrForm', this.parseTestEnumPropAttrForm.bind(this));
+        this.registerCustomAttribute('TestBitEnum', (parser, type) => this.parseEnumFlags(parser, type, ',', true));
         this.registerCustomAttribute('TestBitEnumProp', (parser, type) => this.parseEnumFlags(parser, type, ',', true));
         this.registerCustomAttribute('TestBitEnumSpacePropDefault', (parser, type) => this.parseEnumFlags(parser, type, ' '));
         this.registerCustomAttribute('TestBitEnumPropNamed', this.parseTestBitEnumPropNamed.bind(this));
