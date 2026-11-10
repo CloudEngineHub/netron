@@ -29197,7 +29197,15 @@
     "name": "GroupedMatMul",
     "module": "ai.onnx",
     "version": 29,
-    "description": "GroupedMatMul multiplies each row of a token matrix by one or more selected\ngroup (expert) weight matrices. Given `input` of shape `[M, K]`, `weights` of\nshape `[G, K, N]`, and `group_indices` of shape `[M, S]`, where `S` is the number\nof selections per token, the output has shape `[M, S, N]` and is defined by:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]]\n```\n\nIf `bias` is present, `bias[group_indices[m, i]]` is added to each corresponding\nresult. Every value in `group_indices` must be in the range `[0, G)`.\nValues outside this range, including negative indices, are invalid input;\nthe behavior is undefined for such inputs. In particular, negative indices\ndo not select groups by counting backwards from `G`.\n\nThis operator is represented as a context-dependent function, which also provides\nits reference implementation. Its decomposition uses Gather, Expand, and MatMul\nto define the result, while runtimes are expected to use a fused\ngrouped-matrix-multiplication implementation to avoid materializing the expanded\nintermediate tensors, including selected weights of shape `[M * S, K, N]`.\n\nWeight-only quantized experts are intended to be expressed by applying\nDequantizeLinear to quantized weights (with the appropriate scales and zero\npoints) and passing the result to GroupedMatMul. Runtimes may fuse this\ncomposition to avoid materializing the dequantized `[G, K, N]` weights.\n",
+    "description": "GroupedMatMul multiplies each row of a token matrix by one or more selected\ngroup (expert) weight matrices. Given `input` of shape `[M, K]`, `weights` of\nshape `[G, K, N]` when `transB` is zero (the default), and `group_indices` of shape\n`[M, S]`, where `S` is the number of selections per token, the output has shape\n`[M, S, N]` and is defined by:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]]\n```\n\nWhen `transB` is non-zero, `weights` has shape `[G, N, K]` and each selected\nweight matrix is transposed before multiplication:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]].T\n```\n\n`M` is the number of input rows, `G` is the number of groups, `K` is the\ncontraction dimension, and `N` is the output dimension. Only the last two axes\nof `weights` are logically transposed; the group axis and the layouts of\n`input`, `output`, and `bias` are unchanged.\n\nIf `bias` is present, it must have shape `[G, N]`, and\n`bias[group_indices[m, i]]` is added to each corresponding result.\nIf `M` or `S` is zero, the output is an empty tensor of shape `[M, S, N]`.\nEvery value in `group_indices` must be in the range `[0, G)`.\nValues outside this range, including negative indices, are invalid input;\nthe behavior is undefined for such inputs. In particular, negative indices\ndo not select groups by counting backwards from `G`.\n\nQuantized weights can be dequantized with DequantizeLinear before this operator.\nThe dequantized weights must have the shape specified by `transB`.\n",
+    "attributes": [
+      {
+        "name": "transB",
+        "type": "int64",
+        "required": false,
+        "description": "Whether to transpose the last two axes of weights before multiplication. If zero, weights has shape [G, K, N]; if non-zero, weights has shape [G, N, K]."
+      }
+    ],
     "inputs": [
       {
         "name": "input",
@@ -29207,7 +29215,7 @@
       {
         "name": "weights",
         "type": "T",
-        "description": "Stack of G group weight matrices with shape [G, K, N]."
+        "description": "Stack of G group weight matrices with shape [G, K, N] if transB is zero, or [G, N, K] if transB is non-zero."
       },
       {
         "name": "group_indices",
@@ -29264,7 +29272,19 @@
       },
       {
         "summary": "single_group",
-        "code": "node = onnx.helper.make_node(\n    \"GroupedMatMul\",\n    inputs=[\"input\", \"weights\", \"group_indices\"],\n    outputs=[\"output\"],\n)\ninput = np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)\nweights = np.array([[[1, 2, 3], [4, 5, 6]]], dtype=np.float32)\ngroup_indices = np.zeros((3, 1), dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices)\n\nexpect(\n    node,\n    inputs=[input, weights, group_indices],\n    outputs=[output],\n    name=\"test_groupedmatmul_single_group\",\n    opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n)"
+        "code": "node = onnx.helper.make_node(\n    \"GroupedMatMul\",\n    inputs=[\"input\", \"weights\", \"group_indices\"],\n    outputs=[\"output\"],\n    transB=0,\n)\ninput = np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)\nweights = np.array([[[1, 2, 3], [4, 5, 6]]], dtype=np.float32)\ngroup_indices = np.zeros((3, 1), dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices)\n\nexpect(\n    node,\n    inputs=[input, weights, group_indices],\n    outputs=[output],\n    name=\"test_groupedmatmul_single_group\",\n    opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n)"
+      },
+      {
+        "summary": "transposed_weights",
+        "code": "input = np.array([[1, 2, -1], [3, 0, 4]], dtype=np.float32)\nweights = np.arange(18, dtype=np.float32).reshape(3, 2, 3)\ngroup_indices = np.array([[2, 0, 2], [1, 2, 0]], dtype=np.int64)\nbias = np.array([[0.5, 1], [1.5, -2], [3, 0.25]], dtype=np.float32)\nfor bias_input in (None, \"\", \"bias\"):\n    input_names = [\"input\", \"weights\", \"group_indices\"]\n    values = [input, weights, group_indices]\n    if bias_input is not None:\n        input_names.append(bias_input)\n    if bias_input:\n        values.append(bias)\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\", input_names, [\"output\"], transB=1\n    )\n    output = grouped_matmul(\n        input, weights, group_indices, bias if bias_input else None, transB=1\n    )\n    suffix = {None: \"\", \"\": \"_explicit_empty_bias\", \"bias\": \"_with_bias\"}[\n        bias_input\n    ]\n    expect(\n        node,\n        inputs=values,\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB{suffix}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
+      },
+      {
+        "summary": "transposed_weights_empty",
+        "code": "weights = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\nfor m, s in ((0, 2), (2, 0)):\n    input = np.empty((m, 3), dtype=np.float32)\n    group_indices = np.empty((m, s), dtype=np.int32)\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\",\n        [\"input\", \"weights\", \"group_indices\"],\n        [\"output\"],\n        transB=1,\n    )\n    output = grouped_matmul(input, weights, group_indices, transB=1)\n    expect(\n        node,\n        inputs=[input, weights, group_indices],\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB_empty_{m}_{s}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
+      },
+      {
+        "summary": "transposed_weights_nonzero",
+        "code": "input = np.array([[1, 2, -1], [3, 0, 4]], dtype=np.float32)\nweights = np.arange(18, dtype=np.float32).reshape(3, 2, 3)\ngroup_indices = np.array([[2, 0], [1, 2]], dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices, transB=1)\nfor transB in (-1, 2):\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\",\n        [\"input\", \"weights\", \"group_indices\"],\n        [\"output\"],\n        transB=transB,\n    )\n    expect(\n        node,\n        inputs=[input, weights, group_indices],\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB_nonzero_{transB}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
       },
       {
         "summary": "with_bias",
@@ -35753,6 +35773,64 @@
     ]
   },
   {
+    "name": "Log1p",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes `y = ln(1 + x)` element-wise, where `ln` is the natural logarithm.\nThe output has the same shape and element type as the input, including for\nscalar and empty inputs.\n\nFor finite `x > -1`, the result is a floating-point approximation of `ln(1 + x)`,\nwith `1 + x` evaluated as an exact real sum. Small nonzero results representable\nin the output type must be preserved even when floating-point addition would\nround `1 + x` to `1`. For example, a FLOAT input of `1e-8` produces approximately\n`1e-8`.\n\nSpecial values are defined element-wise as follows:\n\n| Input `x` | Output `y` |\n| --- | --- |\n| Positive zero | Positive zero |\n| Negative zero | Negative zero |\n| `-1` | Negative infinity |\n| Finite `x < -1` | NaN |\n| Negative infinity | NaN |\n| Positive infinity | Positive infinity |\n| NaN | NaN |\n\nThe sign and payload of an output NaN are unspecified.\n",
+    "inputs": [
+      {
+        "name": "input",
+        "type": "T",
+        "description": "Input tensor"
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T",
+        "description": "The natural logarithm of one plus the input, computed element-wise"
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to float tensors.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "log1p",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.array(\n        [[-0.75, -0.5, 0.0, 0.25], [0.5, 1.0, 3.0, 1000.0]], dtype=dtype\n    )\n    y = np.array([math.log1p(float(v)) for v in x.flat], dtype=dtype).reshape(\n        x.shape\n    )\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n    )"
+      },
+      {
+        "summary": "log1p_near_negative_one",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.nextafter(\n        np.array([-1.0], dtype=dtype), np.array([0.0], dtype=dtype)\n    )\n    y = np.array([math.log1p(float(x[0]))], dtype=dtype)\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_near_negative_one_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n    )"
+      },
+      {
+        "summary": "log1p_scalar_and_empty",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nexpect(\n    node,\n    inputs=[np.array(1.0, dtype=np.float32)],\n    outputs=[np.array(math.log(2), dtype=np.float32)],\n    name=\"test_log1p_scalar\",\n)\nx = np.empty((0, 3), dtype=np.float32)\nexpect(node, inputs=[x], outputs=[x], name=\"test_log1p_empty\")"
+      },
+      {
+        "summary": "log1p_small_inputs",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype, tiny in [\n    (np.float16, 2.0**-14),\n    (ml_dtypes.bfloat16, 2.0**-10),\n    (np.float32, 1e-8),\n    (np.float64, 1e-20),\n]:\n    x = np.array([-tiny, -0.0, 0.0, tiny], dtype=dtype)\n    y = np.array([math.log1p(float(v)) for v in x], dtype=dtype)\n    # Relative error allows backend variation, while atol=0 catches\n    # an incorrect zero caused by rounding the intermediate 1 + x.\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_small_inputs_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n        atol=0,\n    )"
+      },
+      {
+        "summary": "log1p_special_values",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.array([-0.0, 0.0, -1.0, -2.0, -np.inf, np.inf, np.nan], dtype=dtype)\n    y = np.array(\n        [-0.0, 0.0, -np.inf, np.nan, np.nan, np.inf, np.nan], dtype=dtype\n    )\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_special_values_{np.dtype(dtype).name}\",\n    )"
+      }
+    ]
+  },
+  {
     "name": "Log",
     "module": "ai.onnx",
     "version": 1,
@@ -35881,6 +35959,72 @@
       {
         "summary": "log",
         "code": "node = onnx.helper.make_node(\n    \"Log\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n)\n\nx = np.array([1, 10]).astype(np.float32)\ny = np.log(x)  # expected output [0., 2.30258512]\nexpect(node, inputs=[x], outputs=[y], name=\"test_log_example\")\n\nx = np.exp(np.random.randn(3, 4, 5).astype(np.float32))\ny = np.log(x)\nexpect(node, inputs=[x], outputs=[y], name=\"test_log\")"
+      }
+    ]
+  },
+  {
+    "name": "LogCumSumExp",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes the inclusive, forward cumulative log-sum-exp of `X` along `axis`.\nLet `r = rank(X)`, where `r >= 1`. The attribute `axis` defaults to 0 and must\nbe in `[-r, r-1]`. The normalized axis is `a = axis` if `axis >= 0`, and\n`a = axis + r` otherwise.\n\nFor each fixed choice of indices in the dimensions other than `a`, let\n`x[0], ..., x[n-1]` be the input slice along `a`, where `n = X.shape[a]`.\nThe corresponding output slice is defined by\n`y[j] = log(sum(exp(x[k]), k = 0, ..., j))` for `0 <= j < n`.\nThus, each prefix includes the current element and all preceding elements,\nand excludes subsequent elements. The output `Y` has the same shape and\nelement type as `X`. If any dimension of `X` is zero, `Y` is empty.\n\nThe following rules apply independently to each prefix, in order:\n\n* If the prefix contains NaN, its output is NaN.\n* Otherwise, if the prefix contains positive infinity, its output is positive infinity.\n* Otherwise, if every element in the prefix is negative infinity, its output is negative infinity.\n\nNegative infinity contributes zero to the sum of exponentials.\n\nAccumulation must be numerically stable and use at least float32 precision\nfor float16, bfloat16 and float32 inputs, and at least float64 precision for\nfloat64 inputs. Each prefix result is converted to the element type of `X`\nto form `Y`; this conversion must not reduce the precision of the intermediate\naccumulation for subsequent prefixes. The floating-point accumulation order\nis unspecified, and different orders may produce different rounding.\n",
+    "attributes": [
+      {
+        "name": "axis",
+        "type": "int64",
+        "required": false,
+        "description": "Axis along which to compute inclusive prefixes, defaulting to 0. Must be in [-rank(X), rank(X)-1]. A negative value is normalized by adding rank(X)."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "type": "T",
+        "description": "Floating-point input tensor of rank at least one. Dimensions may be zero."
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T",
+        "description": "Tensor with the same shape and element type as X, containing inclusive cumulative log-sum-exp values."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Input and output have the same floating-point element type.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(float16)",
+          "tensor(bfloat16)",
+          "tensor(float)",
+          "tensor(double)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "logcumsumexp",
+        "code": "x = np.array([-200, -100, 100], dtype=np.float32)\nnode = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"])\nexpect(node, [x], [x.copy()], name=\"test_logcumsumexp_dynamic_range\")"
+      },
+      {
+        "summary": "logcumsumexp_axes",
+        "code": "x = np.log(np.arange(1, 25, dtype=np.float64)).reshape(2, 3, 4)\nfor axis in (0, 1, 2, -1, -3):\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=axis)\n    y = np.log(np.cumsum(np.exp(x), axis=axis))\n    expect(node, [x], [y], name=f\"test_logcumsumexp_axis_{axis}\")"
+      },
+      {
+        "summary": "logcumsumexp_empty",
+        "code": "for shape, axis in (((2, 0, 3), 1), ((0, 3), -1)):\n    x = np.empty(shape, dtype=np.float32)\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=axis)\n    expect(node, [x], [x.copy()], name=f\"test_logcumsumexp_empty_axis_{axis}\")"
+      },
+      {
+        "summary": "logcumsumexp_low_precision",
+        "code": "for dtype in (np.float16, ml_dtypes.bfloat16):\n    x = np.zeros(128, dtype=dtype)\n    y = np.log(np.arange(1, 129, dtype=np.float64)).astype(dtype)\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"])\n    expect(node, [x], [y], name=f\"test_logcumsumexp_{np.dtype(dtype).name}\")"
+      },
+      {
+        "summary": "logcumsumexp_special_values",
+        "code": "x = np.array(\n    [\n        [-np.inf, -np.inf, -np.inf, -np.inf],\n        [-np.inf, 0, np.inf, -np.inf],\n        [0, np.inf, np.inf, 1],\n        [0, np.nan, np.inf, -np.inf],\n        [np.inf, -np.inf, np.nan, 0],\n    ],\n    dtype=np.float32,\n)\ny = np.array(\n    [\n        [-np.inf, -np.inf, -np.inf, -np.inf],\n        [-np.inf, 0, np.inf, np.inf],\n        [0, np.inf, np.inf, np.inf],\n        [0, np.nan, np.nan, np.nan],\n        [np.inf, np.inf, np.nan, np.nan],\n    ],\n    dtype=np.float32,\n)\nnode = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=1)\nexpect(node, [x], [y], name=\"test_logcumsumexp_special_values\")"
       }
     ]
   },
@@ -39646,7 +39790,7 @@
     "name": "MatMulPacked",
     "module": "com.microsoft",
     "version": 1,
-    "description": "Matrix multiplication Y = A @ B^T where B is a 2D block-packed weight tensor.\nCUDA uses float32 accumulation and reductions. M is the product of A's leading dimensions. Decode (M <= 8) uses float32-decoded weights for FP16 and for BF16 with N < 65536. BF16 decode with N >= 65536 rounds decoded weights to BF16, including the SIMT fallback. Prefill (M > 8) uses bounded scratch memory and BF16-rounded decoded weights for BF16; FP16 prefill uses float32-decoded weights unless the packed format is F16. Consequently, BF16 results may differ across the M and N dispatch boundaries. CUDA execution requires weights in device memory.\nSupported format IDs and their stable byte layouts are defined in the [packed-weight format contract](https://github.com/microsoft/onnxruntime/blob/main/docs/PackedWeightFormats.md).",
+    "description": "Matrix multiplication Y = A @ B^T where B is a 2D block-packed weight tensor.\nComplete dequantized weights are rounded to A's dtype before multiplication by default. CUDA uses float32 accumulation and reductions. M is the product of A's leading dimensions. The CUDA session option ep.cuda.matmul_packed_allow_unrounded_gemv=1 permits eligible decode/GEMV kernels (M <= 8) to skip weight rounding; its default is 0. Prefill (M > 8) uses bounded scratch memory and always rounds weights to A's dtype, including when using float32 scratch buffers. Kernel reduction orders can still differ. CUDA execution requires weights in device memory.\nSupported format IDs and their stable byte layouts are defined in the [packed-weight format contract](https://github.com/microsoft/onnxruntime/blob/main/docs/PackedWeightFormats.md).",
     "attributes": [
       {
         "name": "K",
@@ -39677,10 +39821,16 @@
         "name": "B",
         "type": "T2",
         "description": "Packed weight blob [N, row_bytes]."
+      },
+      {
+        "name": "global_scale",
+        "type": "Tscale",
+        "option": "optional",
+        "description": "Optional scalar FP32 multiplier for NVFP4, applied to FP32 accumulation before the output cast."
       }
     ],
     "min_input": 2,
-    "max_input": 2,
+    "max_input": 3,
     "outputs": [
       {
         "name": "Y",
@@ -39690,6 +39840,7 @@
     ],
     "min_output": 1,
     "max_output": 1,
+    "inputs_range": "2 - 3",
     "type_constraints": [
       {
         "description": "Activation type.",
@@ -39704,6 +39855,13 @@
         "type_param_str": "T2",
         "allowed_type_strs": [
           "tensor(uint8)"
+        ]
+      },
+      {
+        "description": "Global scale type.",
+        "type_param_str": "Tscale",
+        "allowed_type_strs": [
+          "tensor(float)"
         ]
       }
     ]
@@ -42416,8 +42574,16 @@
     ],
     "examples": [
       {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
         "summary": "meanvariancenormalization",
-        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ndata_mean_squared = np.power(data_mean, 2)\ndata_squared = np.power(input_data, 2)\ndata_squared_mean = np.mean(data_squared, axis=(0, 2, 3), keepdims=1)\nstd = np.sqrt(data_squared_mean - data_mean_squared)\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
       }
     ]
   },
@@ -42425,7 +42591,7 @@
     "name": "MeanVarianceNormalization",
     "module": "ai.onnx",
     "version": 13,
-    "description": "A MeanVarianceNormalization Function: Perform mean variance normalization\n      on the input tensor X using formula: `(X-EX)/sqrt(E(X-EX)^2)`\n",
+    "description": "Computes mean-variance normalization of `X`:\n`Y = (X - mean) / (sqrt(variance) + 1e-9)`, where\n`mean = ReduceMean(X, axes)` and\n`variance = ReduceMean(X^2, axes) - mean^2`.\nEach reduction computes the arithmetic mean over `axes` and retains the\nreduced dimensions with size 1 for broadcasting.\n",
     "attributes": [
       {
         "name": "axes",
@@ -42466,8 +42632,81 @@
     ],
     "examples": [
       {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
         "summary": "meanvariancenormalization",
-        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ndata_mean_squared = np.power(data_mean, 2)\ndata_squared = np.power(input_data, 2)\ndata_squared_mean = np.mean(data_squared, axis=(0, 2, 3), keepdims=1)\nstd = np.sqrt(data_squared_mean - data_mean_squared)\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
+      }
+    ]
+  },
+  {
+    "name": "MeanVarianceNormalization",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes mean-variance normalization of `X`:\n`Y = (X - mean) / (sqrt(variance) + epsilon)`, where\n`mean = ReduceMean(X, axes)` and\n`variance = ReduceMean((X - mean)^2, axes)`.\nEach reduction computes the arithmetic mean over `axes` and retains the\nreduced dimensions with size 1 for broadcasting.\nAn empty `axes` list reduces over all dimensions.\n\nThe default `epsilon` is 1e-9 and is added after the square root.\nFor float16 and bfloat16 inputs, `X` is converted to float32 before computation.\nOtherwise, computation uses the input type. `epsilon` is converted to the\ncomputation type, and the result is cast to the input type.\n`Y` has the same shape and element type as `X`.\n",
+    "attributes": [
+      {
+        "name": "axes",
+        "type": "int64[]",
+        "required": false,
+        "description": "Axes over which to compute mean and variance. Values must be in [-r, r-1], where r is the rank of X; negative values count from the last dimension. An empty list reduces over all dimensions. The default is [0, 2, 3], which computes per-channel statistics for an NCHW tensor."
+      },
+      {
+        "name": "epsilon",
+        "type": "float32",
+        "required": false,
+        "default": 9.999999717180685e-10,
+        "description": "Value added to the standard deviation in the denominator."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "type": "T",
+        "description": "Input tensor"
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T",
+        "description": "Output tensor"
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to floating-point tensors.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)",
+          "tensor(bfloat16)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
+        "summary": "meanvariancenormalization",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
       }
     ]
   },
@@ -43093,6 +43332,12 @@
         "type": "float32",
         "required": false,
         "description": "The limit used to clamp in SwiGLU. No clamp when limit is not provided. Does not affect GEGLU."
+      },
+      {
+        "name": "swiglu_limit_after_activation",
+        "type": "int64",
+        "required": false,
+        "description": "When 1, clamp the activated gate instead of the gate input: min(gate * sigmoid(activation_alpha * gate), swiglu_limit) * (clamp(up, -swiglu_limit, swiglu_limit) + activation_beta). Requires activation_type='swiglu' and CUDA. The default 0 preserves input clipping."
       },
       {
         "name": "use_sparse_mixer",
@@ -52568,6 +52813,12 @@
         "type": "float32",
         "required": false,
         "description": "The limit used to clamp inputs in SwiGLU. It is infinite when limit is not provided. Does not affect GEGLU."
+      },
+      {
+        "name": "swiglu_limit_after_activation",
+        "type": "int64",
+        "required": false,
+        "description": "When 1, clamp the activated gate instead of the gate input: min(gate * sigmoid(activation_alpha * gate), swiglu_limit) * (clamp(up, -swiglu_limit, swiglu_limit) + activation_beta). Requires activation_type='swiglu' and CUDA with INT4/INT8 or block-FP8 weights. Offload is unsupported. The default 0 preserves input clipping."
       },
       {
         "name": "use_sparse_mixer",
