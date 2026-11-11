@@ -24203,7 +24203,7 @@
     "name": "GatedDeltaNet",
     "module": "com.microsoft",
     "version": 1,
-    "description": "Packed (token-major) gated delta network / linear attention with an explicit recurrent state.\nImplemented by CUDA and native WebGPU execution providers. WebGPU supports float and float16\nwith scalar decay, `head_size_qk <= 256`, and compact state updates.\n\nLayout. Query, key and value are token-major, so head counts are derived from the shapes\nrather than from attributes:\n\n  query [total_tokens, num_heads_q, head_size_qk]\n  key   [total_tokens, num_heads_k, head_size_qk]\n  value [total_tokens, num_heads_v, head_size_v]\n\nAlternatively, key and value may be omitted and query contains packed QKV with shape\n`[total_tokens, 2 * num_heads_q * head_size_qk + num_heads_v * head_size_v]`.\n`initial_state` is required for packed QKV to determine the head counts and head sizes.\n\nThe leading token axis may instead be spelled as an explicit `[batch_size, sequence_length]`\npair, making query/key/value (and the output) rank 4 and decay/beta rank 3. The memory layout\nis identical; the rank-4 spelling exists so an exporter can round-trip a `[B, S, H*D]`\nactivation with static Reshape targets instead of Shape-derived ones. Ragged packing\n(`cu_seqlens`) requires the rank-3 spelling.\n\n`num_heads_q` must equal `num_heads_k`, and `num_heads_v` must be a positive multiple of\n`num_heads_q` (inverse grouped-query attention: each query/key head is shared by\n`num_heads_v / num_heads_q` value heads). Decay, beta, the state and the output are all at\n`num_heads_v`.\n\nSequence packing. When `cu_seqlens` is provided it is a device int32 tensor of length\n`batch_size + 1` holding the exclusive prefix sums of the per-request token counts, so\nrequests may have different lengths. When it is absent the packing is uniform and the batch\nsize is taken from `initial_state`, which is then required.\n\nState. `initial_state` and `final_state` are V-major, `[batch_size, num_heads_v, head_size_v,\nhead_size_qk]`, and always float regardless of the query/key/value type: the recurrence\nboundary is where reduced precision hurts most. The two may be the same allocation; the\nimplementation reads the whole incoming state before writing any of it.\n\nCompact state updates. When `state_update_capacity` C is greater than zero, `capture_count`\nis required with shape `[batch_size]`. For request b, the first `capture_count[b]` local token\ntransitions (clamped on device to `[0, min(C, sequence_length)]`) are emitted in one `state_update`\nfloat tensor `[batch_size, C * (num_heads_v + num_heads_k * head_size_qk + num_heads_v * head_size_v)]`.\nEach row is struct-of-arrays: all decay values, then all keys, then all deltas. Entries at positions\ngreater than or equal to `min(capture_count[b], C, sequence_length)` are unspecified; consumers must\nread only the captured prefix. The key retains its shared `num_heads_k` representation. For scalar\ndecay the decoded factors replay one transition as `S *= decay; S += outer(key, delta)`.\nPer-key-dimension decay is not supported when compact updates are enabled. `capture_count` is\nforbidden when C is zero.\n\nThe optional CPU input `state_update_active` has shape `[1]`. When zero, transition capture is\ndisabled, `capture_count` is ignored, `state_update` is zero-filled, and the planner may use an\nengine that cannot emit compact updates. Omitting it preserves the conservative behavior of\ntreating capture as active.\n\nRecurrence, per value head, with S the [head_size_qk x head_size_v] state:\n\n  S_t = exp(g_t) S_{t-1} + k_t (beta_t (v_t - exp(g_t) S_{t-1}^T k_t))^T\n  o_t = scale * S_t^T q_t\n\n`update_rule` selects which terms are present: 'linear' drops both the decay and the delta\nretrieval, 'gated' keeps only the decay, 'delta' keeps only the retrieval, and 'gated_delta'\nkeeps both.\n\nThe delta family ('delta' and 'gated_delta') requires L2-normalized keys. Without them the\nper-chunk system (I + M) is arbitrarily ill-conditioned and the recurrence diverges. Either\nnormalize upstream or set `qk_l2_norm=1` to have the operator do it.\n\nFused activations. `gate_activation='softplus'` computes the effective decay in float32 from the\nraw projection carried by `decay`:\n\n  g = -exp(a_log) * Softplus(decay + dt_bias)\n\n`beta_activation='sigmoid'` applies a sigmoid to `beta`, and `qk_l2_norm=1` L2-normalizes each\nquery and key head vector. Folding these in avoids materializing the intermediates and keeps\nthe gate arithmetic in float32 independent of the input type.\nDecay and beta may be float or the query element type (both use the same type). CUDA widens\nFP16/BF16 gate inputs to float before any gate arithmetic, avoiding standalone lossless casts.\nState, a_log, and dt_bias remain float. WebGPU currently accepts float decay and beta only.\n\n",
+    "description": "Packed (token-major) gated delta network / linear attention with an explicit recurrent state.\nImplemented by CPU, CUDA, and native WebGPU execution providers. WebGPU supports float and float16\nwith `head_size_qk <= 256` and compact state updates.\n\nLayout. Query, key and value are token-major, so head counts are derived from the shapes\nrather than from attributes:\n\n  query [total_tokens, num_heads_q, head_size_qk]\n  key   [total_tokens, num_heads_k, head_size_qk]\n  value [total_tokens, num_heads_v, head_size_v]\n\nAlternatively, key and value may be omitted and query contains packed QKV with shape\n`[total_tokens, 2 * num_heads_q * head_size_qk + num_heads_v * head_size_v]`.\n`initial_state` is required for packed QKV to determine the head counts and head sizes.\n\nThe leading token axis may instead be spelled as an explicit `[batch_size, sequence_length]`\npair, making query/key/value (and the output) rank 4 and decay/beta rank 3. The memory layout\nis identical; the rank-4 spelling exists so an exporter can round-trip a `[B, S, H*D]`\nactivation with static Reshape targets instead of Shape-derived ones. Ragged packing\n(`cu_seqlens`) requires the rank-3 spelling.\n\n`num_heads_q` must equal `num_heads_k`, and `num_heads_v` must be a positive multiple of\n`num_heads_q` (inverse grouped-query attention: each query/key head is shared by\n`num_heads_v / num_heads_q` value heads). Decay, beta, the state and the output are all at\n`num_heads_v`.\n\nSequence packing. When `cu_seqlens` is provided it is a device int32 tensor of length\n`batch_size + 1` holding the exclusive prefix sums of the per-request token counts, so\nrequests may have different lengths. When it is absent the packing is uniform and the batch\nsize is taken from `initial_state`, which is then required.\n\nState. `initial_state` and `final_state` are V-major, `[batch_size, num_heads_v, head_size_v,\nhead_size_qk]`, and always float regardless of the query/key/value type: the recurrence\nboundary is where reduced precision hurts most. The two may be the same allocation; the\nimplementation reads the whole incoming state before writing any of it.\n\nCompact state updates. When `state_update_capacity` C is greater than zero, `capture_count`\nis required with shape `[batch_size]`. For request b, the first `capture_count[b]` local token\ntransitions (clamped on device to `[0, min(C, sequence_length)]`) are emitted in one `state_update`\nfloat tensor `[batch_size, C * (decay_width + num_heads_k * head_size_qk + num_heads_v * head_size_v)]`,\nwhere `decay_width` is `num_heads_v` for scalar decay and `num_heads_v * head_size_qk` for\nper-key-dimension decay. Each row is struct-of-arrays: all decay values, then all keys, then all\ndeltas. Entries at positions greater than or equal to `min(capture_count[b], C, sequence_length)`\nare unspecified; consumers must read only the captured prefix. The key retains its shared\n`num_heads_k` representation. For scalar decay the decoded factors replay one transition as\n`S *= decay; S += outer(key, delta)`, and for per-key-dimension decay as\n`S = diag(decay) * S + outer(key, delta)`. `capture_count` is forbidden when C is zero.\n\nThe optional CPU input `state_update_active` has shape `[1]`. When zero, transition capture is\ndisabled, `capture_count` is ignored, `state_update` is zero-filled, and the planner may use an\nengine that cannot emit compact updates. Omitting it preserves the conservative behavior of\ntreating capture as active.\n\nRecurrence, per value head, with S the [head_size_qk x head_size_v] state:\n\n  S_t = exp(g_t) S_{t-1} + k_t (beta_t (v_t - exp(g_t) S_{t-1}^T k_t))^T\n  o_t = scale * S_t^T q_t\n\n`update_rule` selects which terms are present: 'linear' drops both the decay and the delta\nretrieval, 'gated' keeps only the decay, 'delta' keeps only the retrieval, and 'gated_delta'\nkeeps both.\n\nThe delta family ('delta' and 'gated_delta') requires L2-normalized keys. Without them the\nper-chunk system (I + M) is arbitrarily ill-conditioned and the recurrence diverges. Either\nnormalize upstream or set `qk_l2_norm=1` to have the operator do it.\n\nFused activations. `gate_activation='softplus'` computes the effective decay in float32 from the\nraw projection carried by `decay`:\n\n  g = -exp(a_log) * Softplus(decay + dt_bias)\n\n`gate_activation='sigmoid'` (alias `'kda'`) computes the bounded Kimi Delta Attention decay in\nfloat32:\n\n  g = gate_lower_bound * Sigmoid(exp(a_log) * (decay + dt_bias))\n\n`beta_activation='sigmoid'` applies a sigmoid to `beta`, and `qk_l2_norm=1` L2-normalizes each\nquery and key head vector. Folding these in avoids materializing the intermediates and keeps\nthe gate arithmetic in float32 independent of the input type.\nDecay and beta may be float or the query element type (both use the same type). CUDA, CPU, and\nWebGPU widen FP16/BF16 gate inputs to float before any gate arithmetic, avoiding standalone\nlossless casts. State, a_log, and dt_bias remain float.\n\n",
     "attributes": [
       {
         "name": "beta_activation",
@@ -24224,7 +24224,14 @@
         "type": "string",
         "required": false,
         "default": "none",
-        "description": "'none' (default) treats `decay` as the effective log-space decay. 'softplus' computes -exp(a_log) * Softplus(decay + dt_bias) in float32. 'qwen' is accepted as a legacy alias of 'softplus' with identical behavior."
+        "description": "'none' (default) treats `decay` as the effective log-space decay. 'softplus' computes -exp(a_log) * Softplus(decay + dt_bias) in float32 ('qwen' is accepted as a legacy alias). 'sigmoid' (or 'kda') computes gate_lower_bound * Sigmoid(exp(a_log) * (decay + dt_bias)) in float32."
+      },
+      {
+        "name": "gate_lower_bound",
+        "type": "float32",
+        "required": false,
+        "default": -5.0,
+        "description": "Negative lower bound applied when gate_activation is 'sigmoid' or 'kda'. Default -5.0."
       },
       {
         "name": "qk_l2_norm",
@@ -24298,13 +24305,13 @@
         "name": "a_log",
         "type": "TS",
         "option": "optional",
-        "description": "Per-head A_log, shape (num_heads_v). Requires gate_activation=softplus."
+        "description": "Per-head A_log, shape (num_heads_v). Used when gate_activation is 'softplus' or 'sigmoid'/'kda'."
       },
       {
         "name": "dt_bias",
         "type": "TS",
         "option": "optional",
-        "description": "Per-head gate bias, shape (num_heads_v). Requires gate_activation=softplus."
+        "description": "Gate bias, shape (num_heads_v) or (num_heads_v, head_size_qk) / (num_heads_v * head_size_qk). Used when gate_activation is 'softplus' or 'sigmoid'/'kda'."
       },
       {
         "name": "capture_count",
@@ -24337,7 +24344,7 @@
         "name": "state_update",
         "type": "TS",
         "option": "optional",
-        "description": "Struct-of-arrays compact transition factors, shape (batch_size, state_update_capacity * (num_heads_v + num_heads_k * head_size_qk + num_heads_v * head_size_v))."
+        "description": "Struct-of-arrays compact transition factors, shape (batch_size, state_update_capacity * (decay_width + num_heads_k * head_size_qk + num_heads_v * head_size_v)), where decay_width is num_heads_v for scalar decay and num_heads_v * head_size_qk for per-key-dimension decay."
       }
     ],
     "min_output": 1,
@@ -24383,7 +24390,7 @@
     "name": "GatedDeltaNetStateReplay",
     "module": "com.microsoft",
     "version": 1,
-    "description": "Replay one request's captured GatedDeltaNet transitions into an inactive recurrent-state row.\nThe WebGPU implementation uses FP32 backing tensors and CPU metadata; it does not recompute\nnormalization, gates, beta, or retrieval. It waits for checked GPU completion before returning.\n\n`metadata` is int64 [11], ordered as:\n  source_offset, destination_offset, decay_offset, key_offset, delta_offset,\n  Hv, Dv, Dk, Hk, capacity, kept_count.\nOffsets are FP32-element offsets into the full backing tensors, not storage-binding byte offsets.\nAll offsets are nonnegative; dimensions and capacity are positive; 1 <= kept_count <= capacity.\nThe caller must ensure that all kept transitions were actually captured.\n\nThe source_state selected by source_offset must be the state snapshot from immediately before\nthe captured GatedDeltaNet transitions began. Using the producer's final state or another\nsame-shaped snapshot is invalid because captured delta is state-dependent.\nThe capsule geometry (Hv, Dv, Dk, Hk) and capacity must match the producer that generated it.\ncapacity is the original capsule capture/layout capacity. kept_count only selects the leading\ntransitions to replay; kept_count must NOT be substituted for capacity when deriving the\ndecay/key/delta section offsets.\n\nState rows have layout [Hv, Dv, Dk]. The capsule contains decay [capacity, Hv],\nkey [capacity, Hk, Dk], and delta [capacity, Hv, Dv] starting at their respective offsets.\nFor every state element (h,v,i):\n  hk = floor(h * Hk / Hv)\n  s = source[h,v,i]\n  for t = 0 .. kept_count-1:\n    s *= decay[t,h]\n    s += key[t,hk,i] * delta[t,h,v]\n  destination[h,v,i] = s\nUnused capsule tail entries are not read. All other destination elements are preserved.\n\nThe output must be explicitly prebound to the same full allocation as destination_backing.\nDestination backing must be distinct from source and capsule backing. This first implementation\nsupports one descriptor, uint32 shader indexing and no graph capture.\nSource and capsule may share read-only backing; storage bindings are deduplicated only when\ntheir BufferViews have the same Program binding owner, not merely equal raw buffer handles.\n",
+    "description": "Replay one request's captured GatedDeltaNet transitions into an inactive recurrent-state row.\nThe WebGPU implementation uses FP32 backing tensors and CPU metadata; it does not recompute\nnormalization, gates, beta, or retrieval. It waits for checked GPU completion before returning.\n\n`metadata` is int64 [11], ordered as:\n  source_offset, destination_offset, decay_offset, key_offset, delta_offset,\n  Hv, Dv, Dk, Hk, capacity, kept_count.\nOffsets are FP32-element offsets into the full backing tensors, not storage-binding byte offsets.\nAll offsets are nonnegative; dimensions and capacity are positive; 1 <= kept_count <= capacity.\nThe caller must ensure that all kept transitions were actually captured.\n\nThe source_state selected by source_offset must be the state snapshot from immediately before\nthe captured GatedDeltaNet transitions began. Using the producer's final state or another\nsame-shaped snapshot is invalid because captured delta is state-dependent.\nThe capsule geometry (Hv, Dv, Dk, Hk) and capacity must match the producer that generated it.\ncapacity is the original capsule capture/layout capacity. kept_count only selects the leading\ntransitions to replay; kept_count must NOT be substituted for capacity when deriving the\ndecay/key/delta section offsets.\n\nState rows have layout [Hv, Dv, Dk]. The capsule contains decay [capacity, Hv] (or\n[capacity, Hv, Dk] when key_offset - decay_offset == capacity * Hv * Dk), key [capacity, Hk, Dk],\nand delta [capacity, Hv, Dv] starting at their respective offsets.\nFor every state element (h,v,i):\n  hk = floor(h * Hk / Hv)\n  s = source[h,v,i]\n  for t = 0 .. kept_count-1:\n    s *= decay[t,h] (or decay[t,h,i] for per-key-dimension decay)\n    s += key[t,hk,i] * delta[t,h,v]\n  destination[h,v,i] = s\nUnused capsule tail entries are not read. All other destination elements are preserved.\n\nThe output must be explicitly prebound to the same full allocation as destination_backing.\nDestination backing must be distinct from source and capsule backing. This first implementation\nsupports one descriptor, uint32 shader indexing and no graph capture.\nSource and capsule may share read-only backing; storage bindings are deduplicated only when\ntheir BufferViews have the same Program binding owner, not merely equal raw buffer handles.\n",
     "inputs": [
       {
         "name": "source_backing",
@@ -25169,6 +25176,10 @@
       {
         "summary": "int32_batchdim_1",
         "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n    batch_dims=1,\n)\n\ndata = np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]], dtype=np.int32)\nindices = np.array([[1], [0]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 1)\nexpected_output = np.array([[2, 3], [4, 5]], dtype=np.int32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_int32_batch_dim1\",\n)"
+      },
+      {
+        "summary": "selected_kv_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\", [\"cache\", \"positions\"], [\"selected\"], batch_dims=1\n)\ncache = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\npositions = np.array([[[[0], [2]]], [[[1], [-1]]]], dtype=np.int32)\nselected = np.stack([cache[0, [[0, 2]]], cache[1, [[1, 3]]]])\nexpect(\n    node,\n    inputs=[cache, positions],\n    outputs=[selected],\n    name=\"test_gathernd_selected_kv_int32_indices\",\n)"
       }
     ]
   },
@@ -25243,6 +25254,10 @@
       {
         "summary": "int32_batchdim_1",
         "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n    batch_dims=1,\n)\n\ndata = np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]], dtype=np.int32)\nindices = np.array([[1], [0]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 1)\nexpected_output = np.array([[2, 3], [4, 5]], dtype=np.int32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_int32_batch_dim1\",\n)"
+      },
+      {
+        "summary": "selected_kv_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\", [\"cache\", \"positions\"], [\"selected\"], batch_dims=1\n)\ncache = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\npositions = np.array([[[[0], [2]]], [[[1], [-1]]]], dtype=np.int32)\nselected = np.stack([cache[0, [[0, 2]]], cache[1, [[1, 3]]]])\nexpect(\n    node,\n    inputs=[cache, positions],\n    outputs=[selected],\n    name=\"test_gathernd_selected_kv_int32_indices\",\n)"
       }
     ]
   },
@@ -25250,13 +25265,13 @@
     "name": "GatherND",
     "module": "ai.onnx",
     "version": 13,
-    "description": "Given `data` tensor of rank `r` >= 1, `indices` tensor of rank `q` >= 1, and `batch_dims` integer `b`, this operator gathers\nslices of `data` into an output tensor of rank `q + r - indices_shape[-1] - 1 - b`.\n\n`indices` is an q-dimensional integer tensor, best thought of as a `(q-1)`-dimensional tensor of index-tuples into `data`,\nwhere each element defines a slice of `data`\n\n`batch_dims` (denoted as `b`) is an integer indicating the number of batch dimensions, i.e the leading `b` number of dimensions of\n`data` tensor and `indices` are representing the batches, and the gather starts from the `b+1` dimension.\n\nSome salient points about the inputs' rank and shape:\n\n1) r >= 1 and q >= 1 are to be honored. There is no dependency condition to be met between ranks `r` and `q`\n\n2) The first `b` dimensions of the shape of `indices` tensor and `data` tensor must be equal.\n\n3) b < min(q, r) is to be honored.\n\n4) The `indices_shape[-1]` should have a value between 1 (inclusive) and rank `r-b` (inclusive)\n\n5) All values in `indices` are expected to be within bounds [-s, s-1] along axis of size `s` (i.e.) `-data_shape[i] <= indices[...,i] <= data_shape[i] - 1`.\n   It is an error if any of the index values are out of bounds.\n\nThe output is computed as follows:\n\nThe output tensor is obtained by mapping each index-tuple in the `indices` tensor to the corresponding slice of the input `data`.\n\n1) If `indices_shape[-1] > r-b` => error condition\n\n2) If `indices_shape[-1] == r-b`, since the rank of `indices` is `q`, `indices` can be thought of as `N` `(q-b-1)`-dimensional tensors\n   containing 1-D tensors of dimension `r-b`, where `N` is an integer equals to the product of 1 and all the elements in the batch dimensions\n   of the indices_shape. Let us think of each such `r-b` ranked tensor as `indices_slice`. Each *scalar value* corresponding to `data[0:b-1,indices_slice]`\n   is filled into the corresponding location of the `(q-b-1)`-dimensional tensor to form the `output` tensor (Example 1 below)\n\n3) If `indices_shape[-1] < r-b`, since the rank of `indices` is `q`, `indices` can be thought of as `N` `(q-b-1)`-dimensional tensor\n   containing 1-D tensors of dimension `< r-b`. Let us think of each such tensors as `indices_slice`. Each *tensor slice* corresponding\n   to `data[0:b-1, indices_slice , :]` is filled into the corresponding location of the `(q-b-1)`-dimensional tensor\n   to form the `output` tensor (Examples 2, 3, 4 and 5 below)\n\nThis operator is the inverse of `ScatterND`.\n\n**Example 1**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]   # data_shape    = [2, 2]\nindices = [[0,0],[1,1]]   # indices_shape = [2, 2]\noutput  = [0,3]           # output_shape  = [2]\n```\n\n**Example 2**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]  # data_shape    = [2, 2]\nindices = [[1],[0]]      # indices_shape = [2, 1]\noutput  = [[2,3],[0,1]]  # output_shape  = [2, 2]\n```\n\n**Example 3**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[0,1],[1,0]]                 # indices_shape = [2, 2]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n\n**Example 4**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[[0,1]],[[1,0]]]             # indices_shape = [2, 1, 2]\noutput  = [[[2,3]],[[4,5]]]             # output_shape  = [2, 1, 2]\n```\n\n**Example 5**\n\n```\nbatch_dims = 1\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[1],[0]]                     # indices_shape = [2, 1]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n",
+    "description": "Given `data` tensor of rank `r` >= 1, `indices` tensor of rank `q` >= 1, and `batch_dims` integer `b`, this operator gathers\nslices of `data` into an output tensor of rank `q + r - indices_shape[-1] - 1 - b`.\n\nLet `k = indices_shape[-1]`. Each length-`k` tuple in `indices` selects an element or slice of `data`.\n\nThe leading `b` dimensions of `data` and `indices` are batch dimensions. Each tuple indexes\nthe next `k` dimensions of `data`, starting at axis `b` (axes are zero-based).\n\nThe inputs must satisfy the following constraints:\n\n1) `r >= 1` and `q >= 1`.\n\n2) The first `b` dimensions of the shape of `indices` tensor and `data` tensor must be equal.\n\n3) `batch_dims` must satisfy `0 <= b < min(q, r)`.\n\n4) `indices_shape[-1]` must be between 1 and `r-b`, inclusive.\n\n5) For each tuple component `i`, `0 <= i < indices_shape[-1]`, the index must satisfy\n   `-data_shape[b+i] <= indices[...,i] < data_shape[b+i]`.\n   It is an error if any of the index values are out of bounds.\n\nThe output shape is `indices_shape[:-1] + data_shape[b+k:]`, where `+` denotes shape concatenation.\nFor each coordinate tuple `p` in `indices_shape[:-1]`, the selected value or slice is\n`output[p] = data[p[:b] + tuple(indices[p])]`, using tuple concatenation for the data coordinate.\nUnspecified trailing data axes select the entire slice. When `k = r-b`, each selected value is a scalar.\nNegative indices count backwards from the end of the corresponding data dimension.\nWithin the same batch, repeated index tuples select the same value or slice at multiple output positions.\n\n**Example 1**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]   # data_shape    = [2, 2]\nindices = [[0,0],[1,1]]   # indices_shape = [2, 2]\noutput  = [0,3]           # output_shape  = [2]\n```\n\n**Example 2**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]  # data_shape    = [2, 2]\nindices = [[1],[0]]      # indices_shape = [2, 1]\noutput  = [[2,3],[0,1]]  # output_shape  = [2, 2]\n```\n\n**Example 3**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[0,1],[1,0]]                 # indices_shape = [2, 2]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n\n**Example 4**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[[0,1]],[[1,0]]]             # indices_shape = [2, 1, 2]\noutput  = [[[2,3]],[[4,5]]]             # output_shape  = [2, 1, 2]\n```\n\n**Example 5**\n\n```\nbatch_dims = 1\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[1],[0]]                     # indices_shape = [2, 1]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n",
     "attributes": [
       {
         "name": "batch_dims",
         "type": "int64",
         "required": false,
-        "description": "The number of batch dimensions. The gather of indexing starts from dimension of data[batch_dims:]"
+        "description": "The number of leading batch dimensions shared by data and indices. Index tuples address data axes starting at axis batch_dims."
       }
     ],
     "inputs": [
@@ -25268,7 +25283,7 @@
       {
         "name": "indices",
         "type": "tensor(int64)",
-        "description": "Tensor of rank q >= 1. All index values are expected to be within bounds [-s, s-1] along axis of size s. It is an error if any of the index values are out of bounds."
+        "description": "Tensor of rank q >= 1. Each index must be in [-s, s-1], where s is the size of the corresponding data axis after the batch dimensions. An out-of-bounds index is an error."
       }
     ],
     "min_input": 2,
@@ -25277,7 +25292,7 @@
       {
         "name": "output",
         "type": "T",
-        "description": "Tensor of rank q + r - indices_shape[-1] - 1."
+        "description": "Tensor of rank q + r - indices_shape[-1] - 1 - batch_dims."
       }
     ],
     "min_output": 1,
@@ -25318,6 +25333,97 @@
       {
         "summary": "int32_batchdim_1",
         "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n    batch_dims=1,\n)\n\ndata = np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]], dtype=np.int32)\nindices = np.array([[1], [0]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 1)\nexpected_output = np.array([[2, 3], [4, 5]], dtype=np.int32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_int32_batch_dim1\",\n)"
+      },
+      {
+        "summary": "selected_kv_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\", [\"cache\", \"positions\"], [\"selected\"], batch_dims=1\n)\ncache = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\npositions = np.array([[[[0], [2]]], [[[1], [-1]]]], dtype=np.int32)\nselected = np.stack([cache[0, [[0, 2]]], cache[1, [[1, 3]]]])\nexpect(\n    node,\n    inputs=[cache, positions],\n    outputs=[selected],\n    name=\"test_gathernd_selected_kv_int32_indices\",\n)"
+      }
+    ]
+  },
+  {
+    "name": "GatherND",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Given `data` tensor of rank `r` >= 1, `indices` tensor of rank `q` >= 1, and `batch_dims` integer `b`, this operator gathers\nslices of `data` into an output tensor of rank `q + r - indices_shape[-1] - 1 - b`.\n\nLet `k = indices_shape[-1]`. Each length-`k` tuple in `indices` selects an element or slice of `data`.\n\nThe leading `b` dimensions of `data` and `indices` are batch dimensions. Each tuple indexes\nthe next `k` dimensions of `data`, starting at axis `b` (axes are zero-based).\n\nThe inputs must satisfy the following constraints:\n\n1) `r >= 1` and `q >= 1`.\n\n2) The first `b` dimensions of the shape of `indices` tensor and `data` tensor must be equal.\n\n3) `batch_dims` must satisfy `0 <= b < min(q, r)`.\n\n4) `indices_shape[-1]` must be between 1 and `r-b`, inclusive.\n\n5) For each tuple component `i`, `0 <= i < indices_shape[-1]`, the index must satisfy\n   `-data_shape[b+i] <= indices[...,i] < data_shape[b+i]`.\n   It is an error if any of the index values are out of bounds.\n\nThe output shape is `indices_shape[:-1] + data_shape[b+k:]`, where `+` denotes shape concatenation.\nFor each coordinate tuple `p` in `indices_shape[:-1]`, the selected value or slice is\n`output[p] = data[p[:b] + tuple(indices[p])]`, using tuple concatenation for the data coordinate.\nUnspecified trailing data axes select the entire slice. When `k = r-b`, each selected value is a scalar.\nNegative indices count backwards from the end of the corresponding data dimension.\nWithin the same batch, repeated index tuples select the same value or slice at multiple output positions.\n\n**Example 1**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]   # data_shape    = [2, 2]\nindices = [[0,0],[1,1]]   # indices_shape = [2, 2]\noutput  = [0,3]           # output_shape  = [2]\n```\n\n**Example 2**\n\n```\nbatch_dims = 0\ndata    = [[0,1],[2,3]]  # data_shape    = [2, 2]\nindices = [[1],[0]]      # indices_shape = [2, 1]\noutput  = [[2,3],[0,1]]  # output_shape  = [2, 2]\n```\n\n**Example 3**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[0,1],[1,0]]                 # indices_shape = [2, 2]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n\n**Example 4**\n\n```\nbatch_dims = 0\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[[0,1]],[[1,0]]]             # indices_shape = [2, 1, 2]\noutput  = [[[2,3]],[[4,5]]]             # output_shape  = [2, 1, 2]\n```\n\n**Example 5**\n\n```\nbatch_dims = 1\ndata    = [[[0,1],[2,3]],[[4,5],[6,7]]] # data_shape    = [2, 2, 2]\nindices = [[1],[0]]                     # indices_shape = [2, 1]\noutput  = [[2,3],[4,5]]                 # output_shape  = [2, 2]\n```\n\nOpset 29 adds support for int32 indices; int64 indices remain supported.\n",
+    "attributes": [
+      {
+        "name": "batch_dims",
+        "type": "int64",
+        "required": false,
+        "description": "The number of leading batch dimensions shared by data and indices. Index tuples address data axes starting at axis batch_dims."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "data",
+        "type": "T",
+        "description": "Tensor of rank r >= 1."
+      },
+      {
+        "name": "indices",
+        "type": "Tind",
+        "description": "Tensor of rank q >= 1. Each index must be in [-s, s-1], where s is the size of the corresponding data axis after the batch dimensions. An out-of-bounds index is an error."
+      }
+    ],
+    "min_input": 2,
+    "max_input": 2,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T",
+        "description": "Tensor of rank q + r - indices_shape[-1] - 1 - batch_dims."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to any tensor type.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(uint8)",
+          "tensor(uint16)",
+          "tensor(uint32)",
+          "tensor(uint64)",
+          "tensor(int8)",
+          "tensor(int16)",
+          "tensor(int32)",
+          "tensor(int64)",
+          "tensor(bfloat16)",
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)",
+          "tensor(string)",
+          "tensor(bool)",
+          "tensor(complex64)",
+          "tensor(complex128)"
+        ]
+      },
+      {
+        "description": "Constrain indices to int32 or int64 tensors.",
+        "type_param_str": "Tind",
+        "allowed_type_strs": [
+          "tensor(int32)",
+          "tensor(int64)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "float32",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n)\n\ndata = np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]], dtype=np.float32)\nindices = np.array([[[0, 1]], [[1, 0]]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 0)\nexpected_output = np.array([[[2, 3]], [[4, 5]]], dtype=np.float32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_float32\",\n)"
+      },
+      {
+        "summary": "int32",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n)\n\ndata = np.array([[0, 1], [2, 3]], dtype=np.int32)\nindices = np.array([[0, 0], [1, 1]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 0)\nexpected_output = np.array([0, 3], dtype=np.int32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_int32\",\n)"
+      },
+      {
+        "summary": "int32_batchdim_1",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\",\n    inputs=[\"data\", \"indices\"],\n    outputs=[\"output\"],\n    batch_dims=1,\n)\n\ndata = np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]], dtype=np.int32)\nindices = np.array([[1], [0]], dtype=np.int64)\noutput = gather_nd_impl(data, indices, 1)\nexpected_output = np.array([[2, 3], [4, 5]], dtype=np.int32)\nassert np.array_equal(output, expected_output)\nexpect(\n    node,\n    inputs=[data, indices],\n    outputs=[output],\n    name=\"test_gathernd_example_int32_batch_dim1\",\n)"
+      },
+      {
+        "summary": "selected_kv_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"GatherND\", [\"cache\", \"positions\"], [\"selected\"], batch_dims=1\n)\ncache = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\npositions = np.array([[[[0], [2]]], [[[1], [-1]]]], dtype=np.int32)\nselected = np.stack([cache[0, [[0, 2]]], cache[1, [[1, 3]]]])\nexpect(\n    node,\n    inputs=[cache, positions],\n    outputs=[selected],\n    name=\"test_gathernd_selected_kv_int32_indices\",\n)"
       }
     ]
   },
@@ -25373,6 +25479,82 @@
       },
       {
         "description": "Constrain indice type to int32 or int64",
+        "type_param_str": "Tind",
+        "allowed_type_strs": [
+          "tensor(int32)",
+          "tensor(int64)"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "GatherPacked",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Gather rows from a 2D block-packed embedding table and dequantize on the fly.\nSupported format IDs and their stable byte layouts are defined in the [packed-weight format contract](https://github.com/microsoft/onnxruntime/blob/main/docs/PackedWeightFormats.md).",
+    "attributes": [
+      {
+        "name": "K",
+        "type": "int64",
+        "required": true,
+        "description": "Logical embedding dimension. Must be a positive multiple of the selected packed format's block size."
+      },
+      {
+        "name": "output_dtype",
+        "type": "int64",
+        "required": false,
+        "default": 16,
+        "description": "ONNX TensorProto DataType for output (default 16 = BFLOAT16)."
+      },
+      {
+        "name": "packed_type",
+        "type": "int64",
+        "required": true,
+        "description": "Stable packed-format ID from the packed-weight format contract. Only listed IDs are supported."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "data",
+        "type": "T1",
+        "description": "2D little-endian packed weight blob [vocab_size, row_bytes]."
+      },
+      {
+        "name": "indices",
+        "type": "Tind",
+        "description": "Token indices of arbitrary rank. Negative indices and indices >= vocab_size select row 0."
+      }
+    ],
+    "min_input": 2,
+    "max_input": 2,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T2",
+        "description": "Dequantized gathered embeddings [..., K]."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Packed byte storage.",
+        "type_param_str": "T1",
+        "allowed_type_strs": [
+          "tensor(uint8)"
+        ]
+      },
+      {
+        "description": "Output floating-point type.",
+        "type_param_str": "T2",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)",
+          "tensor(float)"
+        ]
+      },
+      {
+        "description": "Index type.",
         "type_param_str": "Tind",
         "allowed_type_strs": [
           "tensor(int32)",
@@ -29015,7 +29197,15 @@
     "name": "GroupedMatMul",
     "module": "ai.onnx",
     "version": 29,
-    "description": "GroupedMatMul multiplies each row of a token matrix by one or more selected\ngroup (expert) weight matrices. Given `input` of shape `[M, K]`, `weights` of\nshape `[G, K, N]`, and `group_indices` of shape `[M, S]`, where `S` is the number\nof selections per token, the output has shape `[M, S, N]` and is defined by:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]]\n```\n\nIf `bias` is present, `bias[group_indices[m, i]]` is added to each corresponding\nresult. Every value in `group_indices` must be in the range `[0, G)`.\nValues outside this range, including negative indices, are invalid input;\nthe behavior is undefined for such inputs. In particular, negative indices\ndo not select groups by counting backwards from `G`.\n\nThis operator is represented as a context-dependent function, which also provides\nits reference implementation. Its decomposition uses Gather, Expand, and MatMul\nto define the result, while runtimes are expected to use a fused\ngrouped-matrix-multiplication implementation to avoid materializing the expanded\nintermediate tensors, including selected weights of shape `[M * S, K, N]`.\n\nWeight-only quantized experts are intended to be expressed by applying\nDequantizeLinear to quantized weights (with the appropriate scales and zero\npoints) and passing the result to GroupedMatMul. Runtimes may fuse this\ncomposition to avoid materializing the dequantized `[G, K, N]` weights.\n",
+    "description": "GroupedMatMul multiplies each row of a token matrix by one or more selected\ngroup (expert) weight matrices. Given `input` of shape `[M, K]`, `weights` of\nshape `[G, K, N]` when `transB` is zero (the default), and `group_indices` of shape\n`[M, S]`, where `S` is the number of selections per token, the output has shape\n`[M, S, N]` and is defined by:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]]\n```\n\nWhen `transB` is non-zero, `weights` has shape `[G, N, K]` and each selected\nweight matrix is transposed before multiplication:\n\n```\noutput[m, i] = input[m] @ weights[group_indices[m, i]].T\n```\n\n`M` is the number of input rows, `G` is the number of groups, `K` is the\ncontraction dimension, and `N` is the output dimension. Only the last two axes\nof `weights` are logically transposed; the group axis and the layouts of\n`input`, `output`, and `bias` are unchanged.\n\nIf `bias` is present, it must have shape `[G, N]`, and\n`bias[group_indices[m, i]]` is added to each corresponding result.\nIf `M` or `S` is zero, the output is an empty tensor of shape `[M, S, N]`.\nEvery value in `group_indices` must be in the range `[0, G)`.\nValues outside this range, including negative indices, are invalid input;\nthe behavior is undefined for such inputs. In particular, negative indices\ndo not select groups by counting backwards from `G`.\n\nQuantized weights can be dequantized with DequantizeLinear before this operator.\nThe dequantized weights must have the shape specified by `transB`.\n",
+    "attributes": [
+      {
+        "name": "transB",
+        "type": "int64",
+        "required": false,
+        "description": "Whether to transpose the last two axes of weights before multiplication. If zero, weights has shape [G, K, N]; if non-zero, weights has shape [G, N, K]."
+      }
+    ],
     "inputs": [
       {
         "name": "input",
@@ -29025,7 +29215,7 @@
       {
         "name": "weights",
         "type": "T",
-        "description": "Stack of G group weight matrices with shape [G, K, N]."
+        "description": "Stack of G group weight matrices with shape [G, K, N] if transB is zero, or [G, N, K] if transB is non-zero."
       },
       {
         "name": "group_indices",
@@ -29082,7 +29272,19 @@
       },
       {
         "summary": "single_group",
-        "code": "node = onnx.helper.make_node(\n    \"GroupedMatMul\",\n    inputs=[\"input\", \"weights\", \"group_indices\"],\n    outputs=[\"output\"],\n)\ninput = np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)\nweights = np.array([[[1, 2, 3], [4, 5, 6]]], dtype=np.float32)\ngroup_indices = np.zeros((3, 1), dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices)\n\nexpect(\n    node,\n    inputs=[input, weights, group_indices],\n    outputs=[output],\n    name=\"test_groupedmatmul_single_group\",\n    opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n)"
+        "code": "node = onnx.helper.make_node(\n    \"GroupedMatMul\",\n    inputs=[\"input\", \"weights\", \"group_indices\"],\n    outputs=[\"output\"],\n    transB=0,\n)\ninput = np.array([[1, 2], [3, 4], [5, 6]], dtype=np.float32)\nweights = np.array([[[1, 2, 3], [4, 5, 6]]], dtype=np.float32)\ngroup_indices = np.zeros((3, 1), dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices)\n\nexpect(\n    node,\n    inputs=[input, weights, group_indices],\n    outputs=[output],\n    name=\"test_groupedmatmul_single_group\",\n    opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n)"
+      },
+      {
+        "summary": "transposed_weights",
+        "code": "input = np.array([[1, 2, -1], [3, 0, 4]], dtype=np.float32)\nweights = np.arange(18, dtype=np.float32).reshape(3, 2, 3)\ngroup_indices = np.array([[2, 0, 2], [1, 2, 0]], dtype=np.int64)\nbias = np.array([[0.5, 1], [1.5, -2], [3, 0.25]], dtype=np.float32)\nfor bias_input in (None, \"\", \"bias\"):\n    input_names = [\"input\", \"weights\", \"group_indices\"]\n    values = [input, weights, group_indices]\n    if bias_input is not None:\n        input_names.append(bias_input)\n    if bias_input:\n        values.append(bias)\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\", input_names, [\"output\"], transB=1\n    )\n    output = grouped_matmul(\n        input, weights, group_indices, bias if bias_input else None, transB=1\n    )\n    suffix = {None: \"\", \"\": \"_explicit_empty_bias\", \"bias\": \"_with_bias\"}[\n        bias_input\n    ]\n    expect(\n        node,\n        inputs=values,\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB{suffix}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
+      },
+      {
+        "summary": "transposed_weights_empty",
+        "code": "weights = np.arange(24, dtype=np.float32).reshape(2, 4, 3)\nfor m, s in ((0, 2), (2, 0)):\n    input = np.empty((m, 3), dtype=np.float32)\n    group_indices = np.empty((m, s), dtype=np.int32)\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\",\n        [\"input\", \"weights\", \"group_indices\"],\n        [\"output\"],\n        transB=1,\n    )\n    output = grouped_matmul(input, weights, group_indices, transB=1)\n    expect(\n        node,\n        inputs=[input, weights, group_indices],\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB_empty_{m}_{s}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
+      },
+      {
+        "summary": "transposed_weights_nonzero",
+        "code": "input = np.array([[1, 2, -1], [3, 0, 4]], dtype=np.float32)\nweights = np.arange(18, dtype=np.float32).reshape(3, 2, 3)\ngroup_indices = np.array([[2, 0], [1, 2]], dtype=np.int64)\noutput = grouped_matmul(input, weights, group_indices, transB=1)\nfor transB in (-1, 2):\n    node = onnx.helper.make_node(\n        \"GroupedMatMul\",\n        [\"input\", \"weights\", \"group_indices\"],\n        [\"output\"],\n        transB=transB,\n    )\n    expect(\n        node,\n        inputs=[input, weights, group_indices],\n        outputs=[output],\n        name=f\"test_groupedmatmul_transB_nonzero_{transB}\",\n        opset_imports=[onnx.helper.make_opsetid(\"\", 29)],\n    )"
       },
       {
         "summary": "with_bias",
@@ -35571,6 +35773,64 @@
     ]
   },
   {
+    "name": "Log1p",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes `y = ln(1 + x)` element-wise, where `ln` is the natural logarithm.\nThe output has the same shape and element type as the input, including for\nscalar and empty inputs.\n\nFor finite `x > -1`, the result is a floating-point approximation of `ln(1 + x)`,\nwith `1 + x` evaluated as an exact real sum. Small nonzero results representable\nin the output type must be preserved even when floating-point addition would\nround `1 + x` to `1`. For example, a FLOAT input of `1e-8` produces approximately\n`1e-8`.\n\nSpecial values are defined element-wise as follows:\n\n| Input `x` | Output `y` |\n| --- | --- |\n| Positive zero | Positive zero |\n| Negative zero | Negative zero |\n| `-1` | Negative infinity |\n| Finite `x < -1` | NaN |\n| Negative infinity | NaN |\n| Positive infinity | Positive infinity |\n| NaN | NaN |\n\nThe sign and payload of an output NaN are unspecified.\n",
+    "inputs": [
+      {
+        "name": "input",
+        "type": "T",
+        "description": "Input tensor"
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T",
+        "description": "The natural logarithm of one plus the input, computed element-wise"
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to float tensors.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "log1p",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.array(\n        [[-0.75, -0.5, 0.0, 0.25], [0.5, 1.0, 3.0, 1000.0]], dtype=dtype\n    )\n    y = np.array([math.log1p(float(v)) for v in x.flat], dtype=dtype).reshape(\n        x.shape\n    )\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n    )"
+      },
+      {
+        "summary": "log1p_near_negative_one",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.nextafter(\n        np.array([-1.0], dtype=dtype), np.array([0.0], dtype=dtype)\n    )\n    y = np.array([math.log1p(float(x[0]))], dtype=dtype)\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_near_negative_one_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n    )"
+      },
+      {
+        "summary": "log1p_scalar_and_empty",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nexpect(\n    node,\n    inputs=[np.array(1.0, dtype=np.float32)],\n    outputs=[np.array(math.log(2), dtype=np.float32)],\n    name=\"test_log1p_scalar\",\n)\nx = np.empty((0, 3), dtype=np.float32)\nexpect(node, inputs=[x], outputs=[x], name=\"test_log1p_empty\")"
+      },
+      {
+        "summary": "log1p_small_inputs",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype, tiny in [\n    (np.float16, 2.0**-14),\n    (ml_dtypes.bfloat16, 2.0**-10),\n    (np.float32, 1e-8),\n    (np.float64, 1e-20),\n]:\n    x = np.array([-tiny, -0.0, 0.0, tiny], dtype=dtype)\n    y = np.array([math.log1p(float(v)) for v in x], dtype=dtype)\n    # Relative error allows backend variation, while atol=0 catches\n    # an incorrect zero caused by rounding the intermediate 1 + x.\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_small_inputs_{np.dtype(dtype).name}\",\n        rtol=1e-2 if dtype == ml_dtypes.bfloat16 else 1e-3,\n        atol=0,\n    )"
+      },
+      {
+        "summary": "log1p_special_values",
+        "code": "node = onnx.helper.make_node(\"Log1p\", [\"x\"], [\"y\"])\nfor dtype in [np.float16, ml_dtypes.bfloat16, np.float32, np.float64]:\n    x = np.array([-0.0, 0.0, -1.0, -2.0, -np.inf, np.inf, np.nan], dtype=dtype)\n    y = np.array(\n        [-0.0, 0.0, -np.inf, np.nan, np.nan, np.inf, np.nan], dtype=dtype\n    )\n    expect(\n        node,\n        inputs=[x],\n        outputs=[y],\n        name=f\"test_log1p_special_values_{np.dtype(dtype).name}\",\n    )"
+      }
+    ]
+  },
+  {
     "name": "Log",
     "module": "ai.onnx",
     "version": 1,
@@ -35699,6 +35959,72 @@
       {
         "summary": "log",
         "code": "node = onnx.helper.make_node(\n    \"Log\",\n    inputs=[\"x\"],\n    outputs=[\"y\"],\n)\n\nx = np.array([1, 10]).astype(np.float32)\ny = np.log(x)  # expected output [0., 2.30258512]\nexpect(node, inputs=[x], outputs=[y], name=\"test_log_example\")\n\nx = np.exp(np.random.randn(3, 4, 5).astype(np.float32))\ny = np.log(x)\nexpect(node, inputs=[x], outputs=[y], name=\"test_log\")"
+      }
+    ]
+  },
+  {
+    "name": "LogCumSumExp",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes the inclusive, forward cumulative log-sum-exp of `X` along `axis`.\nLet `r = rank(X)`, where `r >= 1`. The attribute `axis` defaults to 0 and must\nbe in `[-r, r-1]`. The normalized axis is `a = axis` if `axis >= 0`, and\n`a = axis + r` otherwise.\n\nFor each fixed choice of indices in the dimensions other than `a`, let\n`x[0], ..., x[n-1]` be the input slice along `a`, where `n = X.shape[a]`.\nThe corresponding output slice is defined by\n`y[j] = log(sum(exp(x[k]), k = 0, ..., j))` for `0 <= j < n`.\nThus, each prefix includes the current element and all preceding elements,\nand excludes subsequent elements. The output `Y` has the same shape and\nelement type as `X`. If any dimension of `X` is zero, `Y` is empty.\n\nThe following rules apply independently to each prefix, in order:\n\n* If the prefix contains NaN, its output is NaN.\n* Otherwise, if the prefix contains positive infinity, its output is positive infinity.\n* Otherwise, if every element in the prefix is negative infinity, its output is negative infinity.\n\nNegative infinity contributes zero to the sum of exponentials.\n\nAccumulation must be numerically stable and use at least float32 precision\nfor float16, bfloat16 and float32 inputs, and at least float64 precision for\nfloat64 inputs. Each prefix result is converted to the element type of `X`\nto form `Y`; this conversion must not reduce the precision of the intermediate\naccumulation for subsequent prefixes. The floating-point accumulation order\nis unspecified, and different orders may produce different rounding.\n",
+    "attributes": [
+      {
+        "name": "axis",
+        "type": "int64",
+        "required": false,
+        "description": "Axis along which to compute inclusive prefixes, defaulting to 0. Must be in [-rank(X), rank(X)-1]. A negative value is normalized by adding rank(X)."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "type": "T",
+        "description": "Floating-point input tensor of rank at least one. Dimensions may be zero."
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T",
+        "description": "Tensor with the same shape and element type as X, containing inclusive cumulative log-sum-exp values."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Input and output have the same floating-point element type.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(float16)",
+          "tensor(bfloat16)",
+          "tensor(float)",
+          "tensor(double)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "logcumsumexp",
+        "code": "x = np.array([-200, -100, 100], dtype=np.float32)\nnode = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"])\nexpect(node, [x], [x.copy()], name=\"test_logcumsumexp_dynamic_range\")"
+      },
+      {
+        "summary": "logcumsumexp_axes",
+        "code": "x = np.log(np.arange(1, 25, dtype=np.float64)).reshape(2, 3, 4)\nfor axis in (0, 1, 2, -1, -3):\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=axis)\n    y = np.log(np.cumsum(np.exp(x), axis=axis))\n    expect(node, [x], [y], name=f\"test_logcumsumexp_axis_{axis}\")"
+      },
+      {
+        "summary": "logcumsumexp_empty",
+        "code": "for shape, axis in (((2, 0, 3), 1), ((0, 3), -1)):\n    x = np.empty(shape, dtype=np.float32)\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=axis)\n    expect(node, [x], [x.copy()], name=f\"test_logcumsumexp_empty_axis_{axis}\")"
+      },
+      {
+        "summary": "logcumsumexp_low_precision",
+        "code": "for dtype in (np.float16, ml_dtypes.bfloat16):\n    x = np.zeros(128, dtype=dtype)\n    y = np.log(np.arange(1, 129, dtype=np.float64)).astype(dtype)\n    node = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"])\n    expect(node, [x], [y], name=f\"test_logcumsumexp_{np.dtype(dtype).name}\")"
+      },
+      {
+        "summary": "logcumsumexp_special_values",
+        "code": "x = np.array(\n    [\n        [-np.inf, -np.inf, -np.inf, -np.inf],\n        [-np.inf, 0, np.inf, -np.inf],\n        [0, np.inf, np.inf, 1],\n        [0, np.nan, np.inf, -np.inf],\n        [np.inf, -np.inf, np.nan, 0],\n    ],\n    dtype=np.float32,\n)\ny = np.array(\n    [\n        [-np.inf, -np.inf, -np.inf, -np.inf],\n        [-np.inf, 0, np.inf, np.inf],\n        [0, np.inf, np.inf, np.inf],\n        [0, np.nan, np.nan, np.nan],\n        [np.inf, np.inf, np.nan, np.nan],\n    ],\n    dtype=np.float32,\n)\nnode = onnx.helper.make_node(\"LogCumSumExp\", [\"X\"], [\"Y\"], axis=1)\nexpect(node, [x], [y], name=\"test_logcumsumexp_special_values\")"
       }
     ]
   },
@@ -39461,6 +39787,86 @@
     ]
   },
   {
+    "name": "MatMulPacked",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Matrix multiplication Y = A @ B^T where B is a 2D block-packed weight tensor.\nComplete dequantized weights are rounded to A's dtype before multiplication by default. CUDA uses float32 accumulation and reductions. M is the product of A's leading dimensions. The CUDA session option ep.cuda.matmul_packed_allow_unrounded_gemv=1 permits eligible decode/GEMV kernels (M <= 8) to skip weight rounding; its default is 0. Prefill (M > 8) uses bounded scratch memory and always rounds weights to A's dtype, including when using float32 scratch buffers. Kernel reduction orders can still differ. CUDA execution requires weights in device memory.\nSupported format IDs and their stable byte layouts are defined in the [packed-weight format contract](https://github.com/microsoft/onnxruntime/blob/main/docs/PackedWeightFormats.md).",
+    "attributes": [
+      {
+        "name": "K",
+        "type": "int64",
+        "required": true,
+        "description": "Reduction dimension. Must be a whole number of packed blocks; CUDA requires a positive multiple of 32."
+      },
+      {
+        "name": "N",
+        "type": "int64",
+        "required": true,
+        "description": "Output dimension."
+      },
+      {
+        "name": "packed_type",
+        "type": "int64",
+        "required": true,
+        "description": "Stable packed-format ID for B from the packed-weight format contract. Only listed IDs are supported."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "A",
+        "type": "T1",
+        "description": "Input activations [..., K]."
+      },
+      {
+        "name": "B",
+        "type": "T2",
+        "description": "Packed weight blob [N, row_bytes]."
+      },
+      {
+        "name": "global_scale",
+        "type": "Tscale",
+        "option": "optional",
+        "description": "Optional scalar FP32 multiplier for NVFP4, applied to FP32 accumulation before the output cast."
+      }
+    ],
+    "min_input": 2,
+    "max_input": 3,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T1",
+        "description": "Output activations [..., N]."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "inputs_range": "2 - 3",
+    "type_constraints": [
+      {
+        "description": "Activation type.",
+        "type_param_str": "T1",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)"
+        ]
+      },
+      {
+        "description": "Packed byte storage.",
+        "type_param_str": "T2",
+        "allowed_type_strs": [
+          "tensor(uint8)"
+        ]
+      },
+      {
+        "description": "Global scale type.",
+        "type_param_str": "Tscale",
+        "allowed_type_strs": [
+          "tensor(float)"
+        ]
+      }
+    ]
+  },
+  {
     "name": "Max",
     "module": "ai.onnx",
     "version": 1,
@@ -42168,8 +42574,16 @@
     ],
     "examples": [
       {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
         "summary": "meanvariancenormalization",
-        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ndata_mean_squared = np.power(data_mean, 2)\ndata_squared = np.power(input_data, 2)\ndata_squared_mean = np.mean(data_squared, axis=(0, 2, 3), keepdims=1)\nstd = np.sqrt(data_squared_mean - data_mean_squared)\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
       }
     ]
   },
@@ -42177,7 +42591,7 @@
     "name": "MeanVarianceNormalization",
     "module": "ai.onnx",
     "version": 13,
-    "description": "A MeanVarianceNormalization Function: Perform mean variance normalization\n      on the input tensor X using formula: `(X-EX)/sqrt(E(X-EX)^2)`\n",
+    "description": "Computes mean-variance normalization of `X`:\n`Y = (X - mean) / (sqrt(variance) + 1e-9)`, where\n`mean = ReduceMean(X, axes)` and\n`variance = ReduceMean(X^2, axes) - mean^2`.\nEach reduction computes the arithmetic mean over `axes` and retains the\nreduced dimensions with size 1 for broadcasting.\n",
     "attributes": [
       {
         "name": "axes",
@@ -42218,8 +42632,81 @@
     ],
     "examples": [
       {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
         "summary": "meanvariancenormalization",
-        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ndata_mean_squared = np.power(data_mean, 2)\ndata_squared = np.power(input_data, 2)\ndata_squared_mean = np.mean(data_squared, axis=(0, 2, 3), keepdims=1)\nstd = np.sqrt(data_squared_mean - data_mean_squared)\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
+      }
+    ]
+  },
+  {
+    "name": "MeanVarianceNormalization",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "Computes mean-variance normalization of `X`:\n`Y = (X - mean) / (sqrt(variance) + epsilon)`, where\n`mean = ReduceMean(X, axes)` and\n`variance = ReduceMean((X - mean)^2, axes)`.\nEach reduction computes the arithmetic mean over `axes` and retains the\nreduced dimensions with size 1 for broadcasting.\nAn empty `axes` list reduces over all dimensions.\n\nThe default `epsilon` is 1e-9 and is added after the square root.\nFor float16 and bfloat16 inputs, `X` is converted to float32 before computation.\nOtherwise, computation uses the input type. `epsilon` is converted to the\ncomputation type, and the result is cast to the input type.\n`Y` has the same shape and element type as `X`.\n",
+    "attributes": [
+      {
+        "name": "axes",
+        "type": "int64[]",
+        "required": false,
+        "description": "Axes over which to compute mean and variance. Values must be in [-r, r-1], where r is the rank of X; negative values count from the last dimension. An empty list reduces over all dimensions. The default is [0, 2, 3], which computes per-channel statistics for an NCHW tensor."
+      },
+      {
+        "name": "epsilon",
+        "type": "float32",
+        "required": false,
+        "default": 9.999999717180685e-10,
+        "description": "Value added to the standard deviation in the denominator."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "type": "T",
+        "description": "Input tensor"
+      }
+    ],
+    "min_input": 1,
+    "max_input": 1,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T",
+        "description": "Output tensor"
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to floating-point tensors.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)",
+          "tensor(bfloat16)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "epsilon",
+        "code": "epsilon = 1.0\nnode = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[1, -1],\n    epsilon=epsilon,\n)\n\ninput_data = np.arange(24, dtype=np.float64).reshape(2, 3, 4)\n\n# Calculate expected output with custom epsilon\ndata_mean = np.mean(input_data, axis=(1, -1), keepdims=True)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(1, -1), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + epsilon)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_epsilon\",\n)"
+      },
+      {
+        "summary": "meanvariancenormalization",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\", inputs=[\"X\"], outputs=[\"Y\"]\n)\n\ninput_data = np.array(\n    [\n        [\n            [[0.8439683], [0.5665144], [0.05836735]],\n            [[0.02916367], [0.12964272], [0.5060197]],\n            [[0.79538304], [0.9411346], [0.9546573]],\n        ],\n        [\n            [[0.17730942], [0.46192095], [0.26480448]],\n            [[0.6746842], [0.01665257], [0.62473077]],\n            [[0.9240844], [0.9722341], [0.11965699]],\n        ],\n        [\n            [[0.41356155], [0.9129373], [0.59330076]],\n            [[0.81929934], [0.7862604], [0.11799799]],\n            [[0.69248444], [0.54119414], [0.07513223]],\n        ],\n    ],\n    dtype=np.float32,\n)\n\n# Calculate expected output data\ndata_mean = np.mean(input_data, axis=(0, 2, 3), keepdims=1)\ncentered = input_data - data_mean\nstd = np.sqrt(np.mean(np.square(centered), axis=(0, 2, 3), keepdims=True))\nexpected_output = (input_data - data_mean) / (std + 1e-9)\n\nexpect(node, inputs=[input_data], outputs=[expected_output], name=\"test_mvn\")"
+      },
+      {
+        "summary": "zero_variance",
+        "code": "node = onnx.helper.make_node(\n    \"MeanVarianceNormalization\",\n    inputs=[\"X\"],\n    outputs=[\"Y\"],\n    axes=[0],\n)\ninput_data = np.ones(2, dtype=np.float32)\nmean = np.mean(input_data, axis=0, keepdims=True)\ncentered = input_data - mean\nexpected_output = centered / (\n    np.sqrt(np.mean(np.square(centered), axis=0, keepdims=True)) + 1e-9\n)\n\nexpect(\n    node,\n    inputs=[input_data],\n    outputs=[expected_output],\n    name=\"test_mvn_zero_variance\",\n)"
       }
     ]
   },
@@ -42847,6 +43334,12 @@
         "description": "The limit used to clamp in SwiGLU. No clamp when limit is not provided. Does not affect GEGLU."
       },
       {
+        "name": "swiglu_limit_after_activation",
+        "type": "int64",
+        "required": false,
+        "description": "When 1, clamp the activated gate instead of the gate input: min(gate * sigmoid(activation_alpha * gate), swiglu_limit) * (clamp(up, -swiglu_limit, swiglu_limit) + activation_beta). Requires activation_type='swiglu' and CUDA. The default 0 preserves input clipping."
+      },
+      {
         "name": "use_sparse_mixer",
         "type": "int64",
         "required": false,
@@ -42919,6 +43412,190 @@
           "tensor(float)",
           "tensor(float16)",
           "tensor(bfloat16)"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MoEGroupRouter",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Fused group-limited sigmoid MoE router (noaux_tc) as used by BailingMoeV3 / DeepSeek-V3.\nComputes s = sigmoid(logits), selects topk_group groups by the sum of top group_topk values of\n(s + expert_bias) per group, selects top_k experts from those groups by (s + expert_bias), and\nwrites log(max(s, 1e-20)) at the selected experts and router_sentinel elsewhere into a 2D\n(total_tokens, num_experts) output tensor ready for MoE / QMoE.\n",
+    "attributes": [
+      {
+        "name": "group_topk",
+        "type": "int64",
+        "required": false,
+        "default": 2,
+        "description": "Positive number of top experts summed within each group, clamped to the group size."
+      },
+      {
+        "name": "n_group",
+        "type": "int64",
+        "required": false,
+        "default": 1,
+        "description": "Positive number of expert groups."
+      },
+      {
+        "name": "router_sentinel",
+        "type": "float32",
+        "required": false,
+        "default": -10000.0,
+        "description": "Value written to non-selected expert positions."
+      },
+      {
+        "name": "top_k",
+        "type": "int64",
+        "required": true,
+        "description": "Positive number of experts selected per token."
+      },
+      {
+        "name": "topk_group",
+        "type": "int64",
+        "required": false,
+        "default": 1,
+        "description": "Positive number of active expert groups selected per token."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "logits",
+        "type": "T",
+        "description": "Router logits tensor of shape (..., num_experts)."
+      },
+      {
+        "name": "expert_bias",
+        "type": "TF",
+        "description": "1D float32 expert bias tensor of shape (num_experts)."
+      }
+    ],
+    "min_input": 2,
+    "max_input": 2,
+    "outputs": [
+      {
+        "name": "router_probs",
+        "type": "T",
+        "description": "2D routed log-scores tensor of shape (total_tokens, num_experts)."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to float tensors.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(float)",
+          "tensor(float16)",
+          "tensor(bfloat16)"
+        ]
+      },
+      {
+        "description": "Constrain expert_bias to float32.",
+        "type_param_str": "TF",
+        "allowed_type_strs": [
+          "tensor(float)"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MoEPacked",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Mixture-of-Experts layer consuming 3D block-packed gate, up, and down expert weight blobs. CUDA execution requires weights in device memory; host-backed external initializers are copied to the device without changing their packed layout.\nSupported format IDs and their stable byte layouts are defined in the [packed-weight format contract](https://github.com/microsoft/onnxruntime/blob/main/docs/PackedWeightFormats.md).",
+    "attributes": [
+      {
+        "name": "activation_type",
+        "type": "string",
+        "required": false,
+        "default": "swiglu",
+        "description": "Expert activation function ('swiglu')."
+      },
+      {
+        "name": "down_type",
+        "type": "int64",
+        "required": true,
+        "description": "Stable packed-format ID of down_experts_weights. Only contract-listed IDs are supported."
+      },
+      {
+        "name": "gate_type",
+        "type": "int64",
+        "required": true,
+        "description": "Stable packed-format ID of gate_experts_weights. Only contract-listed IDs are supported."
+      },
+      {
+        "name": "k",
+        "type": "int64",
+        "required": true,
+        "description": "Number of selected experts per token."
+      },
+      {
+        "name": "normalize_routing_weights",
+        "type": "int64",
+        "required": false,
+        "default": 1,
+        "description": "Whether to normalize top-k routing probabilities."
+      },
+      {
+        "name": "up_type",
+        "type": "int64",
+        "required": true,
+        "description": "Stable packed-format ID of up_experts_weights. Only contract-listed IDs are supported."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "input",
+        "type": "T",
+        "description": "Input hidden states [..., hidden_size]."
+      },
+      {
+        "name": "router_probs",
+        "type": "T",
+        "description": "Router logits [num_rows, num_experts]."
+      },
+      {
+        "name": "gate_experts_weights",
+        "type": "T2",
+        "description": "3D packed gate weight blob [num_experts, inter_size, gate_row_bytes]."
+      },
+      {
+        "name": "up_experts_weights",
+        "type": "T2",
+        "description": "3D packed up weight blob [num_experts, inter_size, up_row_bytes]."
+      },
+      {
+        "name": "down_experts_weights",
+        "type": "T2",
+        "description": "3D packed down weight blob [num_experts, hidden_size, down_row_bytes]."
+      }
+    ],
+    "min_input": 5,
+    "max_input": 5,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T",
+        "description": "Output hidden states [..., hidden_size]."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Activation type.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)"
+        ]
+      },
+      {
+        "description": "Packed byte storage.",
+        "type_param_str": "T2",
+        "allowed_type_strs": [
+          "tensor(uint8)"
         ]
       }
     ]
@@ -52046,7 +52723,7 @@
     "name": "QMoE",
     "module": "com.microsoft",
     "version": 1,
-    "description": "Quantized mixture of experts (MoE).\n      A 2D input is the packed token-major form used by continuous-batching engines: tokens from\n      different requests are concatenated along dimension 0 without padding. QMoE is token-local,\n      so request boundaries do not affect the result and no cumulative sequence-length input is\n      required. A 3D input is the dense convenience form and is processed as batch_size *\n      sequence_length independent token rows. router_probs and optional router_weights must contain\n      one corresponding row per token in either form.\n\n      The quantized weights are stored in column major order per expert.\n      The quantization block size can be specified. If not provided, column wise quantization is used.\n\n      For integer quantization, the formula of linear dequantization using scale and (optionally) zero-point is:\n        dequantized_weight = (quantized_weight - zero_point) * scale\n      When zero_point is not provided, the default value is 2^(bits-1): 2 for 2 bits, 8 for 4 bits, 128 for 8 bits.\n\n      For integer quantization, if block_size is provided, both hidden_size and inter_size must be divisible by the block size, and\n      the dequantization is performed per block of size block_size along the K (input feature) dimension.\n\n      For quant_type='fp8', weights instead use row-major float8e4m3fn tensors shaped [num_experts, N, K].\n      A positive block_size selects square block scaling with float32, float16, or bfloat16 fc*_scales tensors shaped\n      [num_experts, ceil(N / block_size), ceil(K / block_size)]:\n        dequantized_weight[e, n, k] = float(weight[e, n, k]) * scale[e, n / block_size, k / block_size]\n      Partial edge blocks are allowed. No zero points or activation scales are accepted.\n      Without a positive block_size, FP8 uses the legacy per-expert fc*_global_scale inputs instead.\n      Block-scaled FP8 does not use global scales. Activations retain the input type (weight-only quantization).\n      On CUDA SM80-or-newer GPUs, SiLU/SwiGLU block-scaled FP8 uses fused weight-only GEMV/GEMM by default.\n      These kernels decode and scale FP8 tiles on chip without materializing full FP16/BF16 weight buffers.\n      Set ORT_ENABLE_FP8_FUSED=0 before session creation to select the compact dense-dequant fallback.\n      Other activation types and unsupported routing sizes retain the fallback.\n      The WebGPU block-FP8 kernel supports block_size=128 with float32 scales and rejects projections\n      that exceed 32-bit shader addressing or the device's per-dimension dispatch limit.\n\n      Packed byte dimensions are computed as logical_element_count * effective_expert_weight_bits / 8.\n      Weight rows must be byte-aligned. Zero-point rows are padded to a whole byte when necessary.\n\n      fc1_expert_weight_bits, fc2_expert_weight_bits, and fc3_expert_weight_bits optionally override\n      expert_weight_bits for the corresponding projection. An omitted override inherits expert_weight_bits.\n      When SwiGLU is fused, FC3 is stored in FC1 and fc3_expert_weight_bits must be omitted or equal to\n      fc1_expert_weight_bits after inheritance.\n\n      The SwiGLU (Swish-Gated Linear Unit) activation function is like:\n         g = xW + b\n         l = xV + c\n         G = clamp(g, max=limit)\n         L = clamp(l, min=-limit, max=limit)\n         swiglu = G * sigmoid(alpha * G) * (L + beta)\n      where x is the input, W and V are weight matrices, b and c are bias vectors, and alpha, beta and limit are constant float parameters.\n      When swiglu_fusion=0, two GEMMs are not fused, and they are FC1 and FC3 in the inputs.\n      When swiglu_fusion=1, two GEMMs are fused so that g and l are computed in a single GEMM (FC1), and g and l are interleaved on each row of size 2 * inter_size.\n      When swiglu_fusion=2, two GEMMs are fused, and g and l are concatenated on each row.\n      CUDA also supports GEGLU with quant_type='int': geglu = GELU(g, approximate='tanh') * l.\n      GEGLU requires fused FC1 projections: swiglu_fusion=1 stores [g0,l0,g1,l1,...],\n      and swiglu_fusion=2 stores [g | l]. Separate FC3 weights are not supported.\n      activation_alpha, activation_beta and swiglu_limit do not affect GEGLU.\n      \n  The raw INT3 profile extends version 1; execution support is provider-specific.\n  For INT3, the requirements below supersede the legacy format descriptions above.\n  Effective widths are 2, 3, 4, or 8. Models without INT3 retain the legacy format contracts.\n  With INT3, use quant_type='int' (the default), and explicitly set activation_type='swiglu', weights_prepacked=0, swiglu_fusion=1,\n  and block_size=32, 64, or 128. Effective FC3 must equal FC1 after independent inheritance.\n  H comes from input and I from half the FC1 row count; both must be divisible by block_size.\n  Weights are uint8 [E,N,ceil(K*bits/8)], row-local LSB-first bitstreams, without per-block padding.\n  Scales are required [E,N,K/block_size], matching FP16/BF16 activations.\n  INT3 codes dequantize as (u-4)*scale; scales must be finite and nonnegative.\n  Optional INT3 zero points are uint8 [E,N,ceil(3*(K/block_size)/8)]. Each unpacked 3-bit\n  zero-point code must equal 4 (binary 100), the unsigned offset representing logical zero;\n  this does not mean each packed byte is 4. Omission implies the same zero point 4.\n  Unused high padding bits must be zero. INT2/4/8 projections retain their zero-point semantics.\n  FC1 rows are interleaved gate/up; FC2 is [E,H,ceil(I*fc2_bits/8)].\n  Separate FC3, global scales, and activation scales are not accepted by the INT3 profile.\n",
+    "description": "Quantized mixture of experts (MoE).\n      A 2D input is the packed token-major form used by continuous-batching engines: tokens from\n      different requests are concatenated along dimension 0 without padding. QMoE is token-local,\n      so request boundaries do not affect the result and no cumulative sequence-length input is\n      required. A 3D input is the dense convenience form and is processed as batch_size *\n      sequence_length independent token rows. router_probs and optional router_weights must contain\n      one corresponding row per token in either form.\n\n      The quantized weights are stored in column major order per expert.\n      The quantization block size can be specified. If not provided, column wise quantization is used.\n\n      For integer quantization, the formula of linear dequantization using scale and (optionally) zero-point is:\n        dequantized_weight = (quantized_weight - zero_point) * scale\n      When zero_point is not provided, the default value is 2^(bits-1): 2 for 2 bits, 8 for 4 bits, 128 for 8 bits.\n\n      For integer quantization, if block_size is provided, both hidden_size and inter_size must be divisible by the block size, and\n      the dequantization is performed per block of size block_size along the K (input feature) dimension.\n\n      For quant_type='fp8', weights instead use row-major float8e4m3fn tensors shaped [num_experts, N, K].\n      A positive block_size selects square block scaling with float32, float16, or bfloat16 fc*_scales tensors shaped\n      [num_experts, ceil(N / block_size), ceil(K / block_size)]:\n        dequantized_weight[e, n, k] = float(weight[e, n, k]) * scale[e, n / block_size, k / block_size]\n      Partial edge blocks are allowed. No zero points or activation scales are accepted.\n      Without a positive block_size, FP8 uses the legacy per-expert fc*_global_scale inputs instead.\n      Block-scaled FP8 does not use global scales. Activations retain the input type (weight-only quantization).\n      On CUDA SM80-or-newer GPUs, SiLU/SwiGLU block-scaled FP8 uses fused weight-only GEMV/GEMM for decode-sized\n      batches of at most 8 rows by default. These kernels decode and scale FP8 tiles on chip without materializing\n      full FP16/BF16 weight buffers. Larger batches dequantize the selected experts and use the CUTLASS grouped GEMM.\n      Set ORT_QMOE_FP8_FUSED_MAX_ROWS before session creation to change the row cutoff, or set ORT_ENABLE_FP8_FUSED=1\n      to keep the scratch-free fused kernels for every supported row count.\n      Set ORT_ENABLE_FP8_FUSED=0 before session creation to select the compact dense-dequant fallback.\n      Other activation types and unsupported routing sizes retain the fallback.\n      The WebGPU block-FP8 kernel supports block_size=128 with float32 scales and rejects projections\n      that exceed 32-bit shader addressing or the device's per-dimension dispatch limit.\n\n      Packed byte dimensions are computed as logical_element_count * effective_expert_weight_bits / 8.\n      Weight rows must be byte-aligned. Zero-point rows are padded to a whole byte when necessary.\n\n      fc1_expert_weight_bits, fc2_expert_weight_bits, and fc3_expert_weight_bits optionally override\n      expert_weight_bits for the corresponding projection. An omitted override inherits expert_weight_bits.\n      When SwiGLU is fused, FC3 is stored in FC1 and fc3_expert_weight_bits must be omitted or equal to\n      fc1_expert_weight_bits after inheritance.\n\n      The SwiGLU (Swish-Gated Linear Unit) activation function is like:\n         g = xW + b\n         l = xV + c\n         G = clamp(g, max=limit)\n         L = clamp(l, min=-limit, max=limit)\n         swiglu = G * sigmoid(alpha * G) * (L + beta)\n      where x is the input, W and V are weight matrices, b and c are bias vectors, and alpha, beta and limit are constant float parameters.\n      When swiglu_fusion=0, two GEMMs are not fused, and they are FC1 and FC3 in the inputs.\n      When swiglu_fusion=1, two GEMMs are fused so that g and l are computed in a single GEMM (FC1), and g and l are interleaved on each row of size 2 * inter_size.\n      When swiglu_fusion=2, two GEMMs are fused, and g and l are concatenated on each row.\n      CUDA also supports GEGLU with quant_type='int': geglu = GELU(g, approximate='tanh') * l.\n      GEGLU requires fused FC1 projections: swiglu_fusion=1 stores [g0,l0,g1,l1,...],\n      and swiglu_fusion=2 stores [g | l]. Separate FC3 weights are not supported.\n      activation_alpha, activation_beta and swiglu_limit do not affect GEGLU.\n      \n  The raw INT3 profile extends version 1; execution support is provider-specific.\n  For INT3, the requirements below supersede the legacy format descriptions above.\n  Effective widths are 2, 3, 4, or 8. Models without INT3 retain the legacy format contracts.\n  With INT3, use quant_type='int' (the default), and explicitly set activation_type='swiglu', weights_prepacked=0, swiglu_fusion=1,\n  and block_size=32, 64, or 128. Effective FC3 must equal FC1 after independent inheritance.\n  H comes from input and I from half the FC1 row count; both must be divisible by block_size.\n  Weights are uint8 [E,N,ceil(K*bits/8)], row-local LSB-first bitstreams, without per-block padding.\n  Scales are required [E,N,K/block_size], matching FP16/BF16 activations.\n  INT3 codes dequantize as (u-4)*scale; scales must be finite and nonnegative.\n  Optional INT3 zero points are uint8 [E,N,ceil(3*(K/block_size)/8)]. Each unpacked 3-bit\n  zero-point code must equal 4 (binary 100), the unsigned offset representing logical zero;\n  this does not mean each packed byte is 4. Omission implies the same zero point 4.\n  Unused high padding bits must be zero. INT2/4/8 projections retain their zero-point semantics.\n  FC1 rows are interleaved gate/up; FC2 is [E,H,ceil(I*fc2_bits/8)].\n  Separate FC3, global scales, and activation scales are not accepted by the INT3 profile.\n",
     "attributes": [
       {
         "name": "accuracy_level",
@@ -52136,6 +52813,12 @@
         "type": "float32",
         "required": false,
         "description": "The limit used to clamp inputs in SwiGLU. It is infinite when limit is not provided. Does not affect GEGLU."
+      },
+      {
+        "name": "swiglu_limit_after_activation",
+        "type": "int64",
+        "required": false,
+        "description": "When 1, clamp the activated gate instead of the gate input: min(gate * sigmoid(activation_alpha * gate), swiglu_limit) * (clamp(up, -swiglu_limit, swiglu_limit) + activation_beta). Requires activation_type='swiglu' and CUDA with INT4/INT8 or block-FP8 weights. Offload is unsupported. The default 0 preserves input clipping."
       },
       {
         "name": "use_sparse_mixer",
@@ -66136,6 +66819,10 @@
     ],
     "examples": [
       {
+        "summary": "batched_token_add_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\", [\"data\", \"indices\", \"updates\"], [\"output\"], reduction=\"add\"\n)\ndata = np.zeros((2, 3, 2), dtype=np.float32)\nindices = np.array([[0, 1], [1, 0], [0, 1], [1, -1]], dtype=np.int32)\nupdates = np.array([[1, 2], [3, 4], [5, 6], [7, 8]], dtype=np.float32)\noutput = np.array(\n    [[[0, 0], [6, 8], [0, 0]], [[3, 4], [0, 0], [7, 8]]],\n    dtype=np.float32,\n)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_batched_token_add_int32_indices\",\n)"
+      },
+      {
         "summary": "scatternd",
         "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [2]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd\",\n)"
       },
@@ -66223,6 +66910,10 @@
       }
     ],
     "examples": [
+      {
+        "summary": "batched_token_add_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\", [\"data\", \"indices\", \"updates\"], [\"output\"], reduction=\"add\"\n)\ndata = np.zeros((2, 3, 2), dtype=np.float32)\nindices = np.array([[0, 1], [1, 0], [0, 1], [1, -1]], dtype=np.int32)\nupdates = np.array([[1, 2], [3, 4], [5, 6], [7, 8]], dtype=np.float32)\noutput = np.array(\n    [[[0, 0], [6, 8], [0, 0]], [[3, 4], [0, 0], [7, 8]]],\n    dtype=np.float32,\n)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_batched_token_add_int32_indices\",\n)"
+      },
       {
         "summary": "scatternd",
         "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [2]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd\",\n)"
@@ -66321,6 +67012,10 @@
     ],
     "examples": [
       {
+        "summary": "batched_token_add_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\", [\"data\", \"indices\", \"updates\"], [\"output\"], reduction=\"add\"\n)\ndata = np.zeros((2, 3, 2), dtype=np.float32)\nindices = np.array([[0, 1], [1, 0], [0, 1], [1, -1]], dtype=np.int32)\nupdates = np.array([[1, 2], [3, 4], [5, 6], [7, 8]], dtype=np.float32)\noutput = np.array(\n    [[[0, 0], [6, 8], [0, 0]], [[3, 4], [0, 0], [7, 8]]],\n    dtype=np.float32,\n)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_batched_token_add_int32_indices\",\n)"
+      },
+      {
         "summary": "scatternd",
         "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [2]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd\",\n)"
       },
@@ -66354,14 +67049,14 @@
     "name": "ScatterND",
     "module": "ai.onnx",
     "version": 18,
-    "description": "ScatterND takes three inputs `data` tensor of rank r >= 1, `indices` tensor of rank q >= 1,\nand `updates` tensor of rank q + r - indices.shape[-1] - 1. The output of the operation\nis produced by creating a copy of the input `data`, and then updating its value to values\nspecified by `updates` at specific index positions specified by `indices`. Its output shape\nis the same as the shape of `data`.\n\n`indices` is an integer tensor. Let k denote indices.shape[-1], the last dimension in the shape of `indices`.\n`indices` is treated as a (q-1)-dimensional tensor of k-tuples, where each k-tuple is a partial-index into `data`.\nHence, k can be a value at most the rank of `data`. When k equals rank(data), each update entry specifies an\nupdate to a single element of the tensor. When k is less than rank(data) each update entry specifies an\nupdate to a slice of the tensor. Index values are allowed to be negative, as per the usual\nconvention for counting backwards from the end, but are expected in the valid range.\n\n`updates` is treated as a (q-1)-dimensional tensor of replacement-slice-values. Thus, the\nfirst (q-1) dimensions of updates.shape must match the first (q-1) dimensions of indices.shape.\nThe remaining dimensions of `updates` correspond to the dimensions of the\nreplacement-slice-values. Each replacement-slice-value is a (r-k) dimensional tensor,\ncorresponding to the trailing (r-k) dimensions of `data`.  Thus, the shape of `updates`\nmust equal indices.shape[0:q-1] ++ data.shape[k:r], where ++ denotes the concatenation\nof shapes.\n\nThe `output` is calculated via the following equation:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = updates[idx]\n```\n\nThe order of iteration in the above loop is not specified.\nIn particular, indices should not have duplicate entries: that is, if idx1 != idx2, then indices[idx1] != indices[idx2].\nThis ensures that the output value does not depend on the iteration order.\n\n`reduction` allows specification of an optional reduction operation, which is applied to all values in `updates`\ntensor into `output` at the specified `indices`.\nIn cases where `reduction` is set to \"none\", indices should not have duplicate entries: that is, if idx1 != idx2,\nthen indices[idx1] != indices[idx2]. This ensures that the output value does not depend on the iteration order.\nWhen `reduction` is set to some reduction function `f`, `output` is calculated as follows:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = f(output[tuple(indices[idx])], updates[idx])\n```\n\nwhere the `f` is `+`, `*`, `max` or `min` as specified.\n\nThis operator is the inverse of GatherND.\n\n(Opset 18 change): Adds max/min to the set of allowed reduction ops.\n\nExample 1:\n```\ndata    = [1, 2, 3, 4, 5, 6, 7, 8]\nindices = [[4], [3], [1], [7]]\nupdates = [9, 10, 11, 12]\noutput  = [1, 11, 3, 10, 9, 6, 7, 12]\n```\n\nExample 2:\n```\ndata    = [[[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\nindices = [[0], [2]]\nupdates = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]]]\noutput  = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\n```\n",
+    "description": "ScatterND takes three inputs `data` tensor of rank r >= 1, `indices` tensor of rank q >= 1,\nand `updates` tensor of rank q + r - indices.shape[-1] - 1. The output of the operation\nis produced by creating a copy of the input `data`, and then updating its value to values\nspecified by `updates` at specific index positions specified by `indices`. Its output shape\nis the same as the shape of `data`.\n\n`indices` is an integer tensor. Let k denote indices.shape[-1], the last dimension in the shape of `indices`.\n`indices` is treated as a (q-1)-dimensional tensor of k-tuples, where each k-tuple is a partial-index into `data`.\nHence, k can be a value at most the rank of `data`. When k equals rank(data), each update entry specifies an\nupdate to a single element of the tensor. When k is less than rank(data) each update entry specifies an\nupdate to a slice of the tensor. For each tuple component `i`, `0 <= i < k`, the index must satisfy\n`-data.shape[i] <= indices[...,i] < data.shape[i]`. Negative indices count backwards from the end\nof the corresponding dimension. An out-of-bounds index is an error.\n\n`updates` is treated as a (q-1)-dimensional tensor of replacement-slice-values. Thus, the\nfirst (q-1) dimensions of updates.shape must match the first (q-1) dimensions of indices.shape.\nThe remaining dimensions of `updates` correspond to the dimensions of the\nreplacement-slice-values. Each replacement-slice-value is a (r-k) dimensional tensor,\ncorresponding to the trailing (r-k) dimensions of `data`.  Thus, the shape of `updates`\nmust equal indices.shape[0:q-1] ++ data.shape[k:r], where ++ denotes the concatenation\nof shapes.\n\nThe `output` is calculated via the following equation:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = updates[idx]\n```\n\nThe order of iteration in the above loop is not specified.\n\n`reduction` allows specification of an optional reduction operation, which is applied to all values in `updates`\ntensor into `output` at the specified `indices`.\nWhen `reduction` is \"none\", no two index tuples may select the same output element or slice,\nincluding through equivalent positive and negative indices. This ensures that the output value does not\ndepend on the iteration order.\nWhen `reduction` is set to some reduction function `f`, `output` is calculated as follows:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = f(output[tuple(indices[idx])], updates[idx])\n```\n\nwhere the `f` is `+`, `*`, `max` or `min` as specified.\n\n(Opset 18 change): Adds max/min to the set of allowed reduction ops.\n\nExample 1:\n```\ndata    = [1, 2, 3, 4, 5, 6, 7, 8]\nindices = [[4], [3], [1], [7]]\nupdates = [9, 10, 11, 12]\noutput  = [1, 11, 3, 10, 9, 6, 7, 12]\n```\n\nExample 2:\n```\ndata    = [[[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\nindices = [[0], [2]]\nupdates = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]]]\noutput  = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\n```\n",
     "attributes": [
       {
         "name": "reduction",
         "type": "string",
         "required": false,
         "default": "none",
-        "description": "Type of reduction to apply: none (default), add, mul, max, min. 'none': no reduction applied. 'add':  reduction using the addition operation. 'mul':  reduction using the addition operation. 'max': reduction using the maximum operation.'min': reduction using the minimum operation."
+        "description": "Type of reduction to apply: none (default), add, mul, max, min. 'none': no reduction applied. 'add':  reduction using the addition operation. 'mul':  reduction using the multiplication operation. 'max': reduction using the maximum operation. 'min': reduction using the minimum operation."
       }
     ],
     "inputs": [
@@ -66417,6 +67112,119 @@
       }
     ],
     "examples": [
+      {
+        "summary": "batched_token_add_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\", [\"data\", \"indices\", \"updates\"], [\"output\"], reduction=\"add\"\n)\ndata = np.zeros((2, 3, 2), dtype=np.float32)\nindices = np.array([[0, 1], [1, 0], [0, 1], [1, -1]], dtype=np.int32)\nupdates = np.array([[1, 2], [3, 4], [5, 6], [7, 8]], dtype=np.float32)\noutput = np.array(\n    [[[0, 0], [6, 8], [0, 0]], [[3, 4], [0, 0], [7, 8]]],\n    dtype=np.float32,\n)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_batched_token_add_int32_indices\",\n)"
+      },
+      {
+        "summary": "scatternd",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [2]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd\",\n)"
+      },
+      {
+        "summary": "scatternd_add",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"add\",\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [0]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[7, 8, 9, 10], [13, 14, 15, 16], [18, 17, 16, 15], [16, 15, 14, 13]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"add\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_add\",\n)"
+      },
+      {
+        "summary": "scatternd_max",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"max\",\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [0]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 7, 8], [8, 7, 7, 7], [8, 8 ,8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"max\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_max\",\n)"
+      },
+      {
+        "summary": "scatternd_max_with_element_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"max\",\n)\ndata = np.array([[1, 2], [3, 4]], dtype=np.float32)\n# Indices address individual elements (index rank == data rank),\n# which exercises the reduction at the element level.\nindices = np.array([[0, 0], [1, 1]], dtype=np.int64)\nupdates = np.array([5, 1], dtype=np.float32)\n# Expecting output as np.array([[5, 2], [3, 4]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"max\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_max_with_element_indices\",\n)"
+      },
+      {
+        "summary": "scatternd_min",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"min\",\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [0]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 3, 2, 1]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"min\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_min\",\n)"
+      },
+      {
+        "summary": "scatternd_min_with_element_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"min\",\n)\ndata = np.array([[1, 2], [3, 4]], dtype=np.float32)\nindices = np.array([[0, 0], [1, 1]], dtype=np.int64)\nupdates = np.array([5, 1], dtype=np.float32)\n# Expecting output as np.array([[1, 2], [3, 1]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"min\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_min_with_element_indices\",\n)"
+      },
+      {
+        "summary": "scatternd_multiply",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n    reduction=\"mul\",\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [0]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 10, 15, 20], [60, 72, 84, 96], [168, 147, 126, 105], [128, 96, 64, 32]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates, reduction=\"mul\")\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_multiply\",\n)"
+      }
+    ]
+  },
+  {
+    "name": "ScatterND",
+    "module": "ai.onnx",
+    "version": 29,
+    "description": "ScatterND takes three inputs `data` tensor of rank r >= 1, `indices` tensor of rank q >= 1,\nand `updates` tensor of rank q + r - indices.shape[-1] - 1. The output of the operation\nis produced by creating a copy of the input `data`, and then updating its value to values\nspecified by `updates` at specific index positions specified by `indices`. Its output shape\nis the same as the shape of `data`.\n\n`indices` is an integer tensor. Let k denote indices.shape[-1], the last dimension in the shape of `indices`.\n`indices` is treated as a (q-1)-dimensional tensor of k-tuples, where each k-tuple is a partial-index into `data`.\nHence, k can be a value at most the rank of `data`. When k equals rank(data), each update entry specifies an\nupdate to a single element of the tensor. When k is less than rank(data) each update entry specifies an\nupdate to a slice of the tensor. For each tuple component `i`, `0 <= i < k`, the index must satisfy\n`-data.shape[i] <= indices[...,i] < data.shape[i]`. Negative indices count backwards from the end\nof the corresponding dimension. An out-of-bounds index is an error.\n\n`updates` is treated as a (q-1)-dimensional tensor of replacement-slice-values. Thus, the\nfirst (q-1) dimensions of updates.shape must match the first (q-1) dimensions of indices.shape.\nThe remaining dimensions of `updates` correspond to the dimensions of the\nreplacement-slice-values. Each replacement-slice-value is a (r-k) dimensional tensor,\ncorresponding to the trailing (r-k) dimensions of `data`.  Thus, the shape of `updates`\nmust equal indices.shape[0:q-1] ++ data.shape[k:r], where ++ denotes the concatenation\nof shapes.\n\nThe `output` is calculated via the following equation:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = updates[idx]\n```\n\nThe order of iteration in the above loop is not specified.\n\n`reduction` allows specification of an optional reduction operation, which is applied to all values in `updates`\ntensor into `output` at the specified `indices`.\nWhen `reduction` is \"none\", no two index tuples may select the same output element or slice,\nincluding through equivalent positive and negative indices. This ensures that the output value does not\ndepend on the iteration order.\nWhen `reduction` is set to some reduction function `f`, `output` is calculated as follows:\n\n```\noutput = np.copy(data)\nupdate_indices = indices.shape[:-1]\nfor idx in np.ndindex(update_indices):\n    output[tuple(indices[idx])] = f(output[tuple(indices[idx])], updates[idx])\n```\n\nwhere the `f` is `+`, `*`, `max` or `min` as specified.\n\n(Opset 18 change): Adds max/min to the set of allowed reduction ops.\n\nExample 1:\n```\ndata    = [1, 2, 3, 4, 5, 6, 7, 8]\nindices = [[4], [3], [1], [7]]\nupdates = [9, 10, 11, 12]\noutput  = [1, 11, 3, 10, 9, 6, 7, 12]\n```\n\nExample 2:\n```\ndata    = [[[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\nindices = [[0], [2]]\nupdates = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]]]\noutput  = [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n            [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n            [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]]\n```\n\nOpset 29 adds support for int32 indices; int64 indices remain supported.\n",
+    "attributes": [
+      {
+        "name": "reduction",
+        "type": "string",
+        "required": false,
+        "default": "none",
+        "description": "Type of reduction to apply: none (default), add, mul, max, min. 'none': no reduction applied. 'add':  reduction using the addition operation. 'mul':  reduction using the multiplication operation. 'max': reduction using the maximum operation. 'min': reduction using the minimum operation."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "data",
+        "type": "T",
+        "description": "Tensor of rank r >= 1."
+      },
+      {
+        "name": "indices",
+        "type": "Tind",
+        "description": "Tensor of rank q >= 1."
+      },
+      {
+        "name": "updates",
+        "type": "T",
+        "description": "Tensor of rank q + r - indices_shape[-1] - 1."
+      }
+    ],
+    "min_input": 3,
+    "max_input": 3,
+    "outputs": [
+      {
+        "name": "output",
+        "type": "T",
+        "description": "Tensor of rank r >= 1."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 1,
+    "type_constraints": [
+      {
+        "description": "Constrain input and output types to any tensor type.",
+        "type_param_str": "T",
+        "allowed_type_strs": [
+          "tensor(uint8)",
+          "tensor(uint16)",
+          "tensor(uint32)",
+          "tensor(uint64)",
+          "tensor(int8)",
+          "tensor(int16)",
+          "tensor(int32)",
+          "tensor(int64)",
+          "tensor(bfloat16)",
+          "tensor(float16)",
+          "tensor(float)",
+          "tensor(double)",
+          "tensor(string)",
+          "tensor(bool)",
+          "tensor(complex64)",
+          "tensor(complex128)"
+        ]
+      },
+      {
+        "description": "Constrain indices to int32 or int64 tensors.",
+        "type_param_str": "Tind",
+        "allowed_type_strs": [
+          "tensor(int32)",
+          "tensor(int64)"
+        ]
+      }
+    ],
+    "examples": [
+      {
+        "summary": "batched_token_add_int32_indices",
+        "code": "node = onnx.helper.make_node(\n    \"ScatterND\", [\"data\", \"indices\", \"updates\"], [\"output\"], reduction=\"add\"\n)\ndata = np.zeros((2, 3, 2), dtype=np.float32)\nindices = np.array([[0, 1], [1, 0], [0, 1], [1, -1]], dtype=np.int32)\nupdates = np.array([[1, 2], [3, 4], [5, 6], [7, 8]], dtype=np.float32)\noutput = np.array(\n    [[[0, 0], [6, 8], [0, 0]], [[3, 4], [0, 0], [7, 8]]],\n    dtype=np.float32,\n)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd_batched_token_add_int32_indices\",\n)"
+      },
       {
         "summary": "scatternd",
         "code": "node = onnx.helper.make_node(\n    \"ScatterND\",\n    inputs=[\"data\", \"indices\", \"updates\"],\n    outputs=[\"y\"],\n)\ndata = np.array(\n    [\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n        [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]],\n    ],\n    dtype=np.float32,\n)\nindices = np.array([[0], [2]], dtype=np.int64)\nupdates = np.array(\n    [\n        [[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n        [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n    ],\n    dtype=np.float32,\n)\n# Expecting output as np.array(\n#    [[[5, 5, 5, 5], [6, 6, 6, 6], [7, 7, 7, 7], [8, 8, 8, 8]],\n#     [[1, 2, 3, 4], [5, 6, 7, 8], [8, 7, 6, 5], [4, 3, 2, 1]],\n#     [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]],\n#     [[8, 7, 6, 5], [4, 3, 2, 1], [1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.float32)\noutput = scatter_nd_impl(data, indices, updates)\nexpect(\n    node,\n    inputs=[data, indices, updates],\n    outputs=[output],\n    name=\"test_scatternd\",\n)"
