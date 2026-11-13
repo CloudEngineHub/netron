@@ -4947,6 +4947,25 @@
     "assemblyFormat": "$src `[` $lane `]` attr-dict `:` type($dst)"
   },
   {
+    "name": "arm_sve.fmla",
+    "summary": "Floating-point fused multiply-add by indexed element",
+    "description": "FMLA: Floating-point fused multiply-add by indexed element\n\n    Below is a summary from the official documentation for the corresponding\n    [SVE instruction](https://support.arm.com/documentation/111108/2026-09/SVE-Instructions/FMLA--indexed---Floating-point-fused-multiply-add-by-indexed-element-)\n\n    ```\n    This instruction multiplies all floating-point elements within each 128-bit\n    segment of the first source vector by the specified element in the\n    corresponding second source vector segment. The products are then\n    destructively added without intermediate rounding to the corresponding\n    elements of the addend and destination vector.\n\n    The elements within the second source vector are specified using an immediate\n    index that selects the same element position within each 128-bit vector\n    segment. The index range is from 0 to one less than the number of elements per\n    128-bit segment. This instruction is unpredicated.\n    ```\n\n    TODO: When adding support for the \"vector\" variant of FMLA, rename this Op to\n    better differentiate the two.",
+    "operands": [
+      { "name": "acc", "type": "ScalableVectorOfLengthAndType<[4], [F32]>" },
+      { "name": "src1", "type": "ScalableVectorOfLengthAndType<[4], [F32]>" },
+      { "name": "src2", "type": "ScalableVectorOfLengthAndType<[4], [F32]>" },
+      { "name": "lane", "type": "I32" }
+    ],
+    "results": [
+      { "name": "dst", "type": "ScalableVectorOfLengthAndType<[4], [F32]>" }
+    ],
+    "traits": [
+      { "type": "AllTypesMatch<['src1', 'src2']>" },
+      { "type": "AllTypesMatch<['acc', 'dst']>" }
+    ],
+    "assemblyFormat": "$acc `,` $src1 `,` $src2 `,` $lane attr-dict `:` type($src1) `to` type($dst)"
+  },
+  {
     "name": "arm_sve.intr.add",
     "results": [
       { "name": "res", "type": "LLVM_Type" }
@@ -5008,6 +5027,12 @@
   },
   {
     "name": "arm_sve.intr.fdiv",
+    "results": [
+      { "name": "res", "type": "LLVM_Type" }
+    ]
+  },
+  {
+    "name": "arm_sve.intr.fmla.lane",
     "results": [
       { "name": "res", "type": "LLVM_Type" }
     ]
@@ -37110,7 +37135,7 @@
   {
     "name": "omp.iterator",
     "summary": "OpenMP iterator modifier",
-    "description": "The result of `omp.iterator` is an abstract handle of type\n    `!omp.iterated<T>`, representing the list of yielded values. This handle\n    can be directly consumed by OpenMP clauses that accept iterator modifiers,\n    such as `affinity`, `map`, `to`, `from`, or `depend`.\n\n    The region may contain multiple blocks. Exactly one of them is terminated\n    by `omp.yield`; every other block branches to a block of the region.\n\n    Example:\n      %it = omp.iterator(%i, %j) =\n        (%lb_i to %ub_i step %st_i, %lb_j to %ub_j step %st_j) {\n        %addr = ...\n        omp.yield(%addr)\n      } -> !omp.iterated<ptr>",
+    "description": "The result of `omp.iterator` is an abstract handle of type\n    `!omp.iterated<T>`, representing the list of yielded values. This handle\n    can be directly consumed by OpenMP clauses that accept iterator modifiers,\n    such as `affinity`, `map`, `to`, `from`, or `depend`.\n\n    The region may contain multiple blocks. Exactly one of them is terminated\n    by `omp.yield`; every other block branches to a block of the region.\n\n    Each range has a nonzero step and an exclusive upper bound unless\n    `inclusive` is specified. A range is empty when its lower bound is beyond\n    its upper bound in the direction of the step (or equal to an exclusive\n    upper bound). If any range is empty, the result is an empty list and the\n    region is not evaluated.\n\n    Example:\n      %it = omp.iterator(%i, %j) =\n        (%lb_i to %ub_i step %st_i, %lb_j to %ub_j step %st_j) {\n        %addr = ...\n        omp.yield(%addr)\n      } -> !omp.iterated<ptr>",
     "operands": [
       { "name": "loop_lower_bounds", "type": "Variadic<IntLikeType>" },
       { "name": "loop_upper_bounds", "type": "Variadic<IntLikeType>" },

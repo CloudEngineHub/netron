@@ -3473,6 +3473,7 @@ _.Parser = class {
                     case 'f80':
                     case 'f128':
                     case 'index':
+                    case 'mxi8':
                     case 'none':
                     case 'token':
                         return this.parseType();
@@ -3531,6 +3532,8 @@ _.Parser = class {
                         return new _.TokenType();
                     case 'index':
                         return new _.IndexType();
+                    case 'mxi8':
+                        return new _.Type('mxi8');
                     case 'bf16':
                     case 'f16':
                     case 'f32':
@@ -3828,7 +3831,7 @@ _.Parser = class {
             case _.Token.bare_identifier: {
                 const tokenValue = this.getTokenSpelling().str();
                 if (tokenValue === 'tensor' || tokenValue === 'vector' || tokenValue === 'memref' ||
-                    tokenValue === 'none' || tokenValue === 'index' || /^[su]?i[0-9]+$/.test(tokenValue) ||
+                    tokenValue === 'none' || tokenValue === 'index' || tokenValue === 'mxi8' || /^[su]?i[0-9]+$/.test(tokenValue) ||
                     /^f[0-9]+$/.test(tokenValue) || tokenValue === 'bf16' || tokenValue === 'tf32' ||
                     /^f\d+E\d+M\d+/.test(tokenValue) || tokenValue === 'complex' || tokenValue === 'tuple') {
                     const parsedType = this.parseType();

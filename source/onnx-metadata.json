@@ -19936,7 +19936,7 @@
     "name": "DynamicSparseAttention",
     "module": "com.microsoft",
     "version": 1,
-    "description": "Model-neutral sparse grouped-query attention with a contiguous main KV cache.\n\n`selected_indices` and `selected_counts` are produced by an external selector. The operator never computes selection\nscores or TopK indices. The first `selected_counts[q]` entries in each selected-index row are valid; remaining entries\nmust be -1. Valid entries must be unique, non-negative request-local positions in the selected source.\n\n`attention_mode=\"selected_only\"` attends only to selected entries. `attention_mode=\"local_plus_selected\"` jointly\nnormalizes causally valid main-cache entries in `local_window_size` and selected auxiliary entries. An optional\nper-query-head sink can participate in either mode; it contributes to the shared softmax denominator but has no value\nvector. A row with no entries and no sink produces zero output.\n\nSupported mode/source combinations:\n\n- `selected_only` + `main`: Qwen4-Exp QSA-compatible execution.\n- `local_plus_selected` + `auxiliary`: DeepSeek V4 CSA-compatible execution and requires `local_window_size > 0`.\n\nThe main cache uses BNSH layout and ordinary contiguous append semantics. Selection changes reads, not cache writes.\nAuxiliary K/V use BNSH layout and are read-only. When `auxiliary_kv_shared=1`, auxiliary_value may be omitted and\nauxiliary_key is used as both K and V. DeepSeek-style post-attention inverse/conjugate RoPE and output projection remain\nthe exporter's responsibility.\n\nMain caches may instead use INT8 with positive finite float32 key_scale and value_scale vectors, one scale per\nKV-head channel. The cache is symmetric signed int8 without a zero point, like the 8-bit KV cache of GroupQueryAttention\nand PagedAttention; tensor(uint8) is reserved for packed 4-bit caches in those operators and is not accepted here.\nNewly appended keys (after optional normalization and RoPE) and values are divided by their scales,\nrounded to nearest with ties to even, and saturated to [-128, 127]. Attention reads the quantized representation,\nincluding newly appended rows. Auxiliary caches remain floating point. Invalid scale values produce validation_status=10\nwhen validation is requested; CUDA strict validation also reports them as an error.\n",
+    "description": "Model-neutral sparse grouped-query attention with a contiguous main KV cache.\n\n`selected_indices` and `selected_counts` are produced by an external selector. The operator never computes selection\nscores or TopK indices. The first `selected_counts[q]` entries in each selected-index row are valid; remaining entries\nmust be -1. Valid entries must be unique, non-negative request-local positions in the selected source.\n\n`attention_mode=\"selected_only\"` attends only to selected entries. `attention_mode=\"local_plus_selected\"` jointly\nnormalizes causally valid main-cache entries in `local_window_size` and selected auxiliary entries. An optional\nper-query-head sink can participate in either mode; it contributes to the shared softmax denominator but has no value\nvector. A row with no entries and no sink produces zero output.\n\nSupported mode/source combinations:\n\n- `selected_only` + `main`: Qwen4-Exp QSA-compatible execution.\n- `local_plus_selected` + `auxiliary`: DeepSeek V4 CSA-compatible execution and requires `local_window_size > 0`.\n\nThe main cache uses BNSH layout and ordinary contiguous append semantics. Selection changes reads, not cache writes.\nAuxiliary K/V use BNSH layout and are read-only. When `auxiliary_kv_shared=1`, auxiliary_value may be omitted and\nauxiliary_key is used as both K and V. DeepSeek-style post-attention inverse/conjugate RoPE and output projection remain\nthe exporter's responsibility.\nWebGPU requires all floating-point inputs and caches to have the same type as query.\n\nMain caches may instead use INT8 with positive finite float32 key_scale and value_scale vectors, one scale per\nKV-head channel. The cache is symmetric signed int8 without a zero point, like the 8-bit KV cache of GroupQueryAttention\nand PagedAttention; tensor(uint8) is reserved for packed 4-bit caches in those operators and is not accepted here.\nNewly appended keys (after optional normalization and RoPE) and values are divided by their scales,\nrounded to nearest with ties to even, and saturated to [-128, 127]. Attention reads the quantized representation,\nincluding newly appended rows. Auxiliary caches remain floating point. Invalid scale values produce validation_status=10\nwhen validation is requested; CUDA strict validation also reports them as an error.\n",
     "attributes": [
       {
         "name": "attention_mode",
@@ -19984,6 +19984,12 @@
         "description": "Number of query heads."
       },
       {
+        "name": "output_bf16",
+        "type": "int64",
+        "required": false,
+        "description": "Output in bfloat16 (1) when query, key, and value are float16."
+      },
+      {
         "name": "qk_norm_epsilon",
         "type": "float32",
         "required": false,
@@ -20025,18 +20031,18 @@
     "inputs": [
       {
         "name": "query",
-        "type": "T",
+        "type": "TQuery",
         "description": "Query [batch, sequence, num_heads * head_size]. When key and value are omitted, each row contains Q, K, then V concatenated with total width (num_heads + 2 * kv_num_heads) * head_size."
       },
       {
         "name": "key",
-        "type": "T",
+        "type": "TQuery",
         "option": "optional",
         "description": "Current main key [batch, sequence, kv_num_heads * head_size]."
       },
       {
         "name": "value",
-        "type": "T",
+        "type": "TValue",
         "option": "optional",
         "description": "Current main value [batch, sequence, kv_num_heads * head_size]."
       },
@@ -20044,7 +20050,7 @@
         "name": "past_key",
         "type": "TCache",
         "option": "optional",
-        "description": "Main key cache in BNSH layout, same type as query or INT8."
+        "description": "Main key cache in BNSH layout, same type as query, FP16, or INT8."
       },
       {
         "name": "past_value",
@@ -20172,7 +20178,7 @@
     "outputs_range": "1 - 4",
     "type_constraints": [
       {
-        "description": "Constrain all floating-point inputs and outputs to one element type.",
+        "description": "Constrain auxiliary, rotary, normalization, sink, and output tensors to one element type.",
         "type_param_str": "T",
         "allowed_type_strs": [
           "tensor(float)",
@@ -20181,7 +20187,25 @@
         ]
       },
       {
-        "description": "Cache type must match T unless INT8 per-channel scales are supplied.",
+        "description": "Query and key type must match T or TCache.",
+        "type_param_str": "TQuery",
+        "allowed_type_strs": [
+          "tensor(float)",
+          "tensor(float16)",
+          "tensor(bfloat16)"
+        ]
+      },
+      {
+        "description": "Value type must match T or TCache.",
+        "type_param_str": "TValue",
+        "allowed_type_strs": [
+          "tensor(float)",
+          "tensor(float16)",
+          "tensor(bfloat16)"
+        ]
+      },
+      {
+        "description": "Cache type must match T, be FP16, or use INT8 per-channel scales.",
         "type_param_str": "TCache",
         "allowed_type_strs": [
           "tensor(float)",
@@ -39622,6 +39646,437 @@
     ]
   },
   {
+    "name": "MatMulNBitsQLoRAMlp",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Fuses two MatMulNBitsQLoRA projections, their shared optional normalization, and a SiLU-gated MLP. Empty adapter B tensors use the base-only MLP path. Adapter weights are runtime inputs and may change between calls.",
+    "attributes": [
+      {
+        "name": "K",
+        "type": "int64",
+        "required": true,
+        "description": "Shared input feature dimension."
+      },
+      {
+        "name": "N",
+        "type": "int64",
+        "required": true,
+        "description": "Shared gate and up output feature dimension."
+      },
+      {
+        "name": "accuracy_level",
+        "type": "int64",
+        "required": false,
+        "description": "MatMulNBits accuracy policy."
+      },
+      {
+        "name": "activation",
+        "type": "string",
+        "required": true,
+        "description": "Gate activation; WebGPU currently supports silu."
+      },
+      {
+        "name": "bits",
+        "type": "int64",
+        "required": false,
+        "default": 4,
+        "description": "Base weight bit width."
+      },
+      {
+        "name": "block_size",
+        "type": "int64",
+        "required": false,
+        "default": 32,
+        "description": "Base quantization block size."
+      },
+      {
+        "name": "epsilon",
+        "type": "float32",
+        "required": false,
+        "default": 9.999999747378752e-06,
+        "description": "Normalization epsilon."
+      },
+      {
+        "name": "lora_bits",
+        "type": "int64",
+        "required": false,
+        "default": 8,
+        "description": "Adapter weight bit width."
+      },
+      {
+        "name": "lora_block_size",
+        "type": "int64",
+        "required": false,
+        "default": 32,
+        "description": "Adapter quantization block size."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "A",
+        "type": "T1",
+        "description": "Shared MLP input."
+      },
+      {
+        "name": "skip",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional residual for SkipSimplifiedLayerNormalization."
+      },
+      {
+        "name": "norm_scale",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional normalization scale."
+      },
+      {
+        "name": "gate_W",
+        "type": "T2",
+        "description": "Packed gate base weights."
+      },
+      {
+        "name": "gate_scales",
+        "type": "T1",
+        "description": "Gate base scales."
+      },
+      {
+        "name": "gate_bias",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional gate bias; omitted by automatic QLoRA fusion."
+      },
+      {
+        "name": "up_W",
+        "type": "T2",
+        "description": "Packed up base weights."
+      },
+      {
+        "name": "up_scales",
+        "type": "T1",
+        "description": "Up base scales."
+      },
+      {
+        "name": "up_bias",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional up bias; omitted by automatic QLoRA fusion."
+      },
+      {
+        "name": "gate_lora_A",
+        "type": "T2",
+        "description": "Packed gate down weights."
+      },
+      {
+        "name": "gate_lora_A_scales",
+        "type": "T1",
+        "description": "Gate down scales."
+      },
+      {
+        "name": "gate_lora_B",
+        "type": "T2",
+        "description": "Packed gate up weights or empty adapter."
+      },
+      {
+        "name": "gate_lora_B_scales",
+        "type": "T1",
+        "description": "Gate up scales."
+      },
+      {
+        "name": "up_lora_A",
+        "type": "T2",
+        "description": "Packed up down weights."
+      },
+      {
+        "name": "up_lora_A_scales",
+        "type": "T1",
+        "description": "Up down scales."
+      },
+      {
+        "name": "up_lora_B",
+        "type": "T2",
+        "description": "Packed up up weights or empty adapter."
+      },
+      {
+        "name": "up_lora_B_scales",
+        "type": "T1",
+        "description": "Up up scales."
+      }
+    ],
+    "min_input": 17,
+    "max_input": 17,
+    "outputs": [
+      {
+        "name": "Y",
+        "type": "T1",
+        "description": "SiLU(gate) multiplied by up."
+      },
+      {
+        "name": "input_skip_bias_sum",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional residual sum."
+      }
+    ],
+    "min_output": 1,
+    "max_output": 2,
+    "outputs_range": "1 - 2",
+    "type_constraints": [
+      {
+        "description": "Floating-point activation and scale type.",
+        "type_param_str": "T1",
+        "allowed_type_strs": [
+          "tensor(float)",
+          "tensor(float16)"
+        ]
+      },
+      {
+        "description": "Packed quantized weight type.",
+        "type_param_str": "T2",
+        "allowed_type_strs": [
+          "tensor(uint8)"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "MatMulNBitsQLoRAQkv",
+    "module": "com.microsoft",
+    "version": 1,
+    "description": "Fuses three MatMulNBitsQLoRA projections with shared optional normalization. Empty adapter B tensors use the base QKV path; adapters remain runtime inputs.",
+    "attributes": [
+      {
+        "name": "K",
+        "type": "int64",
+        "required": true,
+        "description": "Shared input feature dimension."
+      },
+      {
+        "name": "Nkv",
+        "type": "int64",
+        "required": true,
+        "description": "K and V output feature dimension."
+      },
+      {
+        "name": "Nq",
+        "type": "int64",
+        "required": true,
+        "description": "Q output feature dimension."
+      },
+      {
+        "name": "accuracy_level",
+        "type": "int64",
+        "required": false,
+        "description": "MatMulNBits accuracy policy."
+      },
+      {
+        "name": "bits",
+        "type": "int64",
+        "required": false,
+        "default": 4,
+        "description": "Base weight bit width."
+      },
+      {
+        "name": "block_size",
+        "type": "int64",
+        "required": false,
+        "default": 32,
+        "description": "Base quantization block size."
+      },
+      {
+        "name": "epsilon",
+        "type": "float32",
+        "required": false,
+        "default": 9.999999974752427e-07,
+        "description": "Normalization epsilon."
+      },
+      {
+        "name": "lora_bits",
+        "type": "int64",
+        "required": false,
+        "default": 8,
+        "description": "Adapter weight bit width."
+      },
+      {
+        "name": "lora_block_size",
+        "type": "int64",
+        "required": false,
+        "default": 32,
+        "description": "Adapter quantization block size."
+      }
+    ],
+    "inputs": [
+      {
+        "name": "A",
+        "type": "T1",
+        "description": "Shared QKV input."
+      },
+      {
+        "name": "skip",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional residual for SkipSimplifiedLayerNormalization."
+      },
+      {
+        "name": "norm_scale",
+        "type": "T1",
+        "description": "Normalization scale."
+      },
+      {
+        "name": "q_W",
+        "type": "T2",
+        "description": "Packed Q base weights."
+      },
+      {
+        "name": "q_scales",
+        "type": "T1",
+        "description": "Q base scales."
+      },
+      {
+        "name": "q_bias",
+        "type": "T1",
+        "option": "optional",
+        "description": "Reserved optional Q bias."
+      },
+      {
+        "name": "k_W",
+        "type": "T2",
+        "description": "Packed K base weights."
+      },
+      {
+        "name": "k_scales",
+        "type": "T1",
+        "description": "K base scales."
+      },
+      {
+        "name": "k_bias",
+        "type": "T1",
+        "option": "optional",
+        "description": "Reserved optional K bias."
+      },
+      {
+        "name": "v_W",
+        "type": "T2",
+        "description": "Packed V base weights."
+      },
+      {
+        "name": "v_scales",
+        "type": "T1",
+        "description": "V base scales."
+      },
+      {
+        "name": "v_bias",
+        "type": "T1",
+        "option": "optional",
+        "description": "Reserved optional V bias."
+      },
+      {
+        "name": "q_lora_A",
+        "type": "T2",
+        "description": "Packed Q down weights."
+      },
+      {
+        "name": "q_lora_A_scales",
+        "type": "T1",
+        "description": "Q down scales."
+      },
+      {
+        "name": "q_lora_B",
+        "type": "T2",
+        "description": "Packed Q up weights or empty adapter."
+      },
+      {
+        "name": "q_lora_B_scales",
+        "type": "T1",
+        "description": "Q up scales."
+      },
+      {
+        "name": "k_lora_A",
+        "type": "T2",
+        "description": "Packed K down weights."
+      },
+      {
+        "name": "k_lora_A_scales",
+        "type": "T1",
+        "description": "K down scales."
+      },
+      {
+        "name": "k_lora_B",
+        "type": "T2",
+        "description": "Packed K up weights or empty adapter."
+      },
+      {
+        "name": "k_lora_B_scales",
+        "type": "T1",
+        "description": "K up scales."
+      },
+      {
+        "name": "v_lora_A",
+        "type": "T2",
+        "description": "Packed V down weights."
+      },
+      {
+        "name": "v_lora_A_scales",
+        "type": "T1",
+        "description": "V down scales."
+      },
+      {
+        "name": "v_lora_B",
+        "type": "T2",
+        "description": "Packed V up weights or empty adapter."
+      },
+      {
+        "name": "v_lora_B_scales",
+        "type": "T1",
+        "description": "V up scales."
+      }
+    ],
+    "min_input": 24,
+    "max_input": 24,
+    "outputs": [
+      {
+        "name": "Q",
+        "type": "T1",
+        "description": "Q projection."
+      },
+      {
+        "name": "K_output",
+        "type": "T1",
+        "description": "K projection."
+      },
+      {
+        "name": "V",
+        "type": "T1",
+        "description": "V projection."
+      },
+      {
+        "name": "input_skip_bias_sum",
+        "type": "T1",
+        "option": "optional",
+        "description": "Optional residual sum."
+      }
+    ],
+    "min_output": 3,
+    "max_output": 4,
+    "outputs_range": "3 - 4",
+    "type_constraints": [
+      {
+        "description": "Floating-point activation and scale type.",
+        "type_param_str": "T1",
+        "allowed_type_strs": [
+          "tensor(float)",
+          "tensor(float16)"
+        ]
+      },
+      {
+        "description": "Packed quantized weight type.",
+        "type_param_str": "T2",
+        "allowed_type_strs": [
+          "tensor(uint8)"
+        ]
+      }
+    ]
+  },
+  {
     "name": "MatMulNBitsQkv",
     "module": "com.microsoft",
     "version": 1,
@@ -55034,7 +55489,7 @@
     "name": "RMSNormRotary",
     "module": "com.microsoft",
     "version": 1,
-    "description": "CUDA BF16 ONNX-arithmetic RMS normalization followed by non-interleaved partial RoPE. Input is [B,S,heads,stride]; a contiguous last-axis slice is normalized with FP32 scale. Normalization rounds to BF16 before rotation. Output is flattened [B,S,heads*width]. Width 256 and more than one row use one kernel for FP32 decode rotary or prefill; other shapes and BF16 decode rotary reuse existing CUDA kernels. Prefill mode uses reciprocal-multiply normalization and BF16 rotary intermediates; decode uses division normalization and the selected rotary arithmetic.",
+    "description": "CUDA RMS normalization followed by non-interleaved partial RoPE. Input is BF16 or FP16 [B,S,heads,stride]; a contiguous last-axis slice is normalized with FP32 scale. FP16 input/output or FP32 rotary caches use FP32 intermediates without BF16 rounding before rotation. Otherwise normalization rounds to BF16 before rotation: prefill mode uses reciprocal-multiply normalization and BF16 rotary intermediates, while decode uses division normalization and the selected rotary arithmetic. Numerical mode controls do not change the FP32-intermediate path. Output defaults to BF16 and is flattened [B,S,heads*width].",
     "attributes": [
       {
         "name": "epsilon",
@@ -55062,6 +55517,12 @@
         "description": "Normalized width; zero uses the full last dimension."
       },
       {
+        "name": "output_fp16",
+        "type": "int64",
+        "required": false,
+        "description": "Output Y in float16 (1) instead of bfloat16 (0)."
+      },
+      {
         "name": "rotary_embedding_dim",
         "type": "int64",
         "required": true,
@@ -55079,7 +55540,7 @@
       {
         "name": "X",
         "type": "T",
-        "description": "BF16 input [B,S,heads,stride]."
+        "description": "BF16 or FP16 input [B,S,heads,stride]."
       },
       {
         "name": "scale",
@@ -55093,12 +55554,12 @@
       },
       {
         "name": "cosine",
-        "type": "T",
-        "description": "BF16 cache [cache_rows,rotary_embedding_dim/2]."
+        "type": "TCos",
+        "description": "BF16 or FP32 cache [cache_rows,rotary_embedding_dim/2]."
       },
       {
         "name": "sine",
-        "type": "T",
+        "type": "TCos",
         "description": "Same shape/type as cosine."
       },
       {
@@ -55113,14 +55574,14 @@
     "outputs": [
       {
         "name": "Y",
-        "type": "T",
+        "type": "TOut",
         "description": "Normalized and rotated [B,S,heads*width]."
       },
       {
         "name": "normalized_fp32",
         "type": "F",
         "option": "optional",
-        "description": "Optional BF16-rounded normalized values widened to FP32, before rotation, [B,S,heads,width]."
+        "description": "Optional normalized values before rotation, [B,S,heads,width]. The FP32-intermediate path retains FP32 values; the BF16 path widens BF16-rounded values to FP32."
       }
     ],
     "min_output": 1,
@@ -55129,10 +55590,27 @@
     "outputs_range": "1 - 2",
     "type_constraints": [
       {
-        "description": "BF16 data.",
+        "description": "BF16 or FP16 data.",
         "type_param_str": "T",
         "allowed_type_strs": [
-          "tensor(bfloat16)"
+          "tensor(bfloat16)",
+          "tensor(float16)"
+        ]
+      },
+      {
+        "description": "BF16 or FP32 rotary cache.",
+        "type_param_str": "TCos",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float)"
+        ]
+      },
+      {
+        "description": "BF16 or FP16 output.",
+        "type_param_str": "TOut",
+        "allowed_type_strs": [
+          "tensor(bfloat16)",
+          "tensor(float16)"
         ]
       },
       {
